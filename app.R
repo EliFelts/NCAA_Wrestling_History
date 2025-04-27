@@ -63,15 +63,7 @@ ind_years_hist <- ind_years_formatted %>%
 
 ind_years_hist
 
-# i think a way to handle some of this is 
-# to first have User choose what they want to
-# filter on (team, seed, placement, etc.)
-# then have additional reactive UI come up
-# accordingly
 
-filter_selection <- pickerInput(inputId = "user_filters",
-                                label="Choose Filters",
-                                choices=c("Team","Seed","Placement"))
 
 # build user interface
 
@@ -97,14 +89,32 @@ ui <- page_navbar(
                                   value=c(1980,max(wrestlers_master$year)),
                                   sep=""),
                       
-                    
+                      uiOutput("team_options"),
+
                       
                       
                       pickerInput(inputId = "placement_filter",
                                   label="Filter by Placement",
                                   choices=levels(ind_years_formatted$Placement),
                                   selected=levels(ind_years_formatted$Placement),
-                                  multiple=TRUE)
+                                  multiple=TRUE,
+                                  options=list(
+                                    
+                                    `actions-box` = TRUE
+                                    
+                                  )),
+                      
+                      pickerInput(inputId = "seed_filter",
+                                  label="Filter by Seed",
+                                  choices=seq(1,33,1),
+                                  selected=seq(1,33,1),
+                                  multiple=TRUE,
+                                  options=list(
+                                    
+                                    `actions-box` = TRUE
+                                    
+                                  ))
+                      
                        
                     )
                     
@@ -132,9 +142,13 @@ ui <- page_navbar(
 
 server <- function(input,output,session){
   
+
+  
   # make the individual tournaments by wrestlers filter reactively
   
   ind_tourneys_reactive <- reactive({
+    
+    req(input$ind_dates)
     
     ind_tourney_min <- min(input$ind_dates)
     ind_tourney_max <- max(input$ind_dates)
@@ -142,7 +156,33 @@ server <- function(input,output,session){
     ind_tourney.dat <- ind_years_formatted %>% 
       filter(Year>=ind_tourney_min,
              Year<=ind_tourney_max,
-             Placement %in% input$placement_filter)
+             Placement %in% input$placement_filter,
+             Seed %in% input$seed_filter)
+    
+    
+  })
+  
+  # make the teams available selectInput reactive so
+  # it only includes the teams avaialable in the date range selected
+  
+  output$team_options <- renderUI({
+    
+    req(input$ind_dates)
+    
+    dat <- ind_tourneys_reactive() %>% 
+      arrange(Team)
+    
+    pickerInput(inputId = "team_filter",
+                label="Filter by Team",
+                choices=unique(dat$Team),
+                selected=unique(dat$Team),
+                multiple=TRUE,
+                options=list(
+                  
+                  `actions-box` = TRUE,
+                  `live-search` = TRUE
+                  
+                ))
     
     
   })
@@ -152,6 +192,7 @@ server <- function(input,output,session){
   output$ind_tourneys_table <- renderDT({
     
     ind_tourneys_reactive() %>% 
+      filter(Team %in% input$team_filter) %>% 
       arrange(desc(`Team Points`))
     
   })
