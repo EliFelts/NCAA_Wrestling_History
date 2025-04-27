@@ -40,18 +40,47 @@ ind_years_formatted <- wrestlers_master %>%
          `Bonus Points`=bonus_points,Record,
          Terminations=terminations,Pins=falls,
          Bonus=bonus,
-         `Bonus Percent`,Matches,Wins=wins) 
+         `Bonus Percent`,Matches,Wins=wins) %>% 
+  mutate(Placement=ifelse(is.na(Placement),"DNP",Placement),
+         Placement=factor(Placement,
+                          levels=c("First","Second","Third","Fourth",
+                                   "Fifth","Sixth","Seventh","Eighth",
+                                   "DNP")))
 
 # make some formatting changes for individual tournaments
 
+# think about adding a plot showing the distribution of team points among the 
+# selection
+
+ind_years_hist <- ind_years_formatted %>% 
+  filter(Year>1980,Seed==2) %>% 
+  ggplot(aes(x=`Team Points`)) + 
+  geom_histogram()+
+  facet_wrap(~Seed,
+             scales="free_y")+
+  coord_flip()+
+  theme_bw()
+
+ind_years_hist
+
+# i think a way to handle some of this is 
+# to first have User choose what they want to
+# filter on (team, seed, placement, etc.)
+# then have additional reactive UI come up
+# accordingly
+
+filter_selection <- pickerInput(inputId = "user_filters",
+                                label="Choose Filters",
+                                choices=c("Team","Seed","Placement"))
 
 # build user interface
 
 ui <- page_navbar(
   
+  
   title="NCAA Wrestling Tournament Results",
   
-  theme=bs_theme(preset="cyborg"),
+  theme=bs_theme(preset="cerulean"),
   
   sidebar=sidebar(width=500,
                   
@@ -66,8 +95,17 @@ ui <- page_navbar(
                                   min=min(wrestlers_master$year),
                                   max=max(wrestlers_master$year),
                                   value=c(1980,max(wrestlers_master$year)),
-                                  sep="")
+                                  sep=""),
                       
+                    
+                      
+                      
+                      pickerInput(inputId = "placement_filter",
+                                  label="Filter by Placement",
+                                  choices=levels(ind_years_formatted$Placement),
+                                  selected=levels(ind_years_formatted$Placement),
+                                  multiple=TRUE)
+                       
                     )
                     
                     )),
@@ -103,7 +141,8 @@ server <- function(input,output,session){
     
     ind_tourney.dat <- ind_years_formatted %>% 
       filter(Year>=ind_tourney_min,
-             Year<=ind_tourney_max)
+             Year<=ind_tourney_max,
+             Placement %in% input$placement_filter)
     
     
   })
