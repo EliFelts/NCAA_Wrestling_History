@@ -11,6 +11,7 @@ library(conflicted)
 library(bsicons)
 library(fontawesome)
 library(arrow)
+library(hms)
 
 
 conflicts_prefer(DT::renderDT,
@@ -47,6 +48,70 @@ ind_years_formatted <- wrestlers_master %>%
                                    "Fifth","Sixth","Seventh","Eighth",
                                    "DNP")))
 
+careers_summary1 <- wrestlers_master %>% 
+  mutate(falls_time=na_if(falls_time, "NA"),
+         falls_time=as_hms(falls_time),
+         tech_time=na_if(tech_time,"NA"),
+         tech_time=as_hms(tech_time)) %>% 
+  group_by(wrestler_id) %>% 
+  summarize(teams_n=n_distinct(team),
+            teams=toString(unique(team)),
+            appearances=n(),
+            wins=sum(wins),
+            losses=sum(losses),
+            matches=sum(wins,losses),
+            team_points=sum(team_points),
+            titles=sum(placement=="First",na.rm=T),
+            finals=sum(placement %in% c("First","Second")),
+            aa=sum(!is.na(placement)),
+            falls=sum(falls,na.rm=T),
+            fall_time=as_hms(sum(falls_time,na.rm=T)),
+            terminations=sum(terminations,na.rm=T),
+            bonus=sum(bonus,na.rm=T),
+            termination_percent=round(terminations/matches*100),
+            bonus_percent=round(bonus/matches*100)) %>%
+  mutate(points_per_tourney=team_points/appearances) %>% 
+  arrange(-team_points)
+
+# five correction
+
+fivers <- careers_summary %>% 
+  filter(appearances>4)
+
+fivers_career_summary <- wrestlers_master %>% 
+  filter(wrestler_id %in% fivers$wrestler_id) %>% 
+  mutate(falls_time=na_if(falls_time, "NA"),
+         falls_time=as_hms(falls_time),
+         tech_time=na_if(tech_time,"NA"),
+         tech_time=as_hms(tech_time)) %>% 
+  group_by(wrestler_id) %>% 
+  arrange(wrestler_id,-team_points) %>% 
+  mutate(season_rank=row_number()) %>% 
+  filter(season_rank<5) %>% 
+  group_by(wrestler_id) %>% 
+  summarize(teams_n=n_distinct(team),
+            teams=toString(unique(team)),
+            appearances=n(),
+            wins=sum(wins),
+            losses=sum(losses),
+            matches=sum(wins,losses),
+            team_points=sum(team_points),
+            titles=sum(placement=="First",na.rm=T),
+            finals=sum(placement %in% c("First","Second")),
+            aa=sum(!is.na(placement)),
+            falls=sum(falls,na.rm=T),
+            fall_time=as_hms(sum(falls_time,na.rm=T)),
+            terminations=sum(terminations,na.rm=T),
+            bonus=sum(bonus,na.rm=T),
+            termination_percent=round(terminations/matches*100),
+            bonus_percent=round(bonus/matches*100)) %>%
+  mutate(points_per_tourney=team_points/appearances) %>% 
+  arrange(-team_points)
+
+careers_summary2 <- careers_summary1 %>% 
+  filter(appearances<5) %>% 
+  bind_rows(fivers_career_summary)
+
 # make some formatting changes for individual tournaments
 
 # think about adding a plot showing the distribution of team points among the 
@@ -74,7 +139,11 @@ ui <- page_navbar(
   
   theme=bs_theme(preset="cerulean"),
   
+  id="nav",
+  
   sidebar=sidebar(width=500,
+                  
+                  conditionalPanel("input.nav==`Individual Season Data`",
                   
                   accordion(
                     
@@ -119,8 +188,37 @@ ui <- page_navbar(
                     )
                     
                     )),
+                  
+                  conditionalPanel(
+                    
+                    "input.nav==`Individual Career Data`",
+                    
+                    accordion(
+                      
+                      accordion_panel(
+          
+                        "Filter Careers",
+                        
+                        sliderInput(inputId = "ind_dates",
+                                    label="Choose a range of years",
+                                    min=min(wrestlers_master$year),
+                                    max=max(wrestlers_master$year),
+                                    value=c(1980,max(wrestlers_master$year)),
+                                    sep=""),
+                        
+                        
+                      )
+                      
+                      
+                    )
+                    
+                    
+                    
+                  )
+                  
+                  ),
   
-  nav_panel("Explore Data",
+  nav_panel("Individual Season Data",
 
             page_fillable(
                       
@@ -132,7 +230,9 @@ ui <- page_navbar(
                         
                       )
                       
-                    ))
+                    )),
+  
+  nav_panel("Individual Career Data")
                     
                   
                   
