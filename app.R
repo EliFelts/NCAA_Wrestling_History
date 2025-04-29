@@ -24,7 +24,9 @@ conflicts_prefer(DT::renderDT,
 # because cleaning up a couple things still; will
 # move these to feather to improve speed later
 
-matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773")
+matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773") %>% 
+  mutate(winner_firstlast=str_remove(winner, " \\(.*\\)$"),
+         loser_firstlast=str_remove(loser, " \\(.*\\)$"))
 wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048")
 
 # get the amount of points already earned
@@ -179,29 +181,37 @@ careers_formatted <- careers_summary2 %>%
 
 career_relevant <- careers_summary2 %>% 
   select(wrestler_id,career_team_points=team_points,career_titles=titles,
-         career_finals=finals,career_aa=aa)
+         career_finals=finals,career_aa=aa) %>% 
+  mutate(career_aa_logical=ifelse(career_aa>0,1,0),
+         career_champ_logical=ifelse(career_titles>0,1,0))
 
 wrestlers_master3 <- wrestlers_master2 %>% 
   left_join(career_relevant,by="wrestler_id")
 
 
-weight_rankings <- wrestlers_master2 %>% 
+weight_rankings <- wrestlers_master3 %>% 
   group_by(year,weight_class) %>% 
   summarize(earned_points=sum(cumulative_prior_points),
+            career_points=sum(career_team_points),
             aa_finishes=sum(cumulative_prior_aa,na.rm=T),
+            career_aa_finishes=sum(career_aa,na.rm=T),
             individual_aa=sum(prior_aa_logical),
+            individiaul_aa_career=sum(career_aa_logical),
             champ_finishes=sum(cumulative_prior_titles,na.rm=T),
+            career_champ_finishes=sum(career_titles,na.rm=T),
             individual_champs=sum(prior_champ_logical),
+            individual_champs_career=sum(career_champ_logical),
             finalist_finishes=sum(cumulative_prior_finalists,na.rm=T),
             individual_finalists=sum(prior_finalists_logical))
 
-weight_search <- wrestlers_master2 %>% 
-  filter(weight_class==177,
-         year==1982) %>% 
+weight_search <- wrestlers_master3 %>% 
+  filter(weight_class==158,
+         year==1994) %>% 
   select(weight_class,year,wrestler,team,team_points,placement,
          cumulative_prior_points,cumulative_prior_aa,
          prior_aa_logical,prior_champ_logical,cumulative_prior_titles,
-         cumulative_prior_finalists,prior_aa_logical)
+         cumulative_prior_finalists,prior_aa_logical,career_team_points,
+         career_aa,career_titles)
 
 # career filters? Team, Number of Titles, Number of AA
 
@@ -358,6 +368,14 @@ ui <- page_navbar(
                         DTOutput("ind_tourneys_table"),
                         full_screen = TRUE
                         
+                      ),
+                      
+                      card(
+                        
+                        card_header("Individual Tournament Matches by Selection"),
+                        DTOutput("ind_matches_table"),
+                        full_screen = TRUE
+                        
                       )
                       
                     )),
@@ -403,7 +421,9 @@ server <- function(input,output,session){
       filter(Year>=ind_tourney_min,
              Year<=ind_tourney_max,
              Placement %in% input$placement_filter,
-             Seed %in% input$seed_filter)
+             Seed %in% input$seed_filter) %>% 
+      filter(Team %in% input$team_filter) %>% 
+      arrange(desc(`Team Points`))
     
     
   })
@@ -414,11 +434,73 @@ server <- function(input,output,session){
   
   output$ind_tourneys_table <- renderDT({
     
-    ind_tourneys_reactive() %>% 
-      filter(Team %in% input$team_filter) %>% 
-      arrange(desc(`Team Points`))
+    dat <- ind_tourneys_reactive() 
+    
+    datatable(
+      dat,
+      selection="single",
+      options=list(pageLength=25)
+    )
     
   })
+  
+  # filter individual matches based on a selected individual
+  # from the individual tourneys table, first create
+  # a reactive object of the selected row (right now
+  # only allowing a single selection)
+  
+  tourneys_reactive <- reactive({
+    
+    tourney_dat <- ind_tourneys_reactive()
+    selected_tourneys <- input$ind_tourneys_table_rows_selected 
+    
+    dat <-   tourney_dat[selected_tourneys,]
+
+    
+  })
+  
+  # now filter the data reactively
+  
+  matches_reactive <- reactive({
+    
+    req(tourneys_reactive())
+    
+    dat <- tourneys_reactive()
+
+    output <- matches_master %>%
+      filter(winner_firstlast %in% dat$Name|loser_firstlast %in% dat$Name,
+             year %in% dat$Year,
+             weight_class %in% dat$Weight) %>%
+      arrange(bout)
+
+  })
+  
+  # make the filtered matches for selected individual render
+  # to a datatable object
+  
+  output$ind_matches_table <- renderDT({
+    
+    req(tourneys_reactive())
+    req(matches_reactive())
+    
+    dat <- matches_reactive() %>% 
+      mutate(Winner=str_c(winner_firstlast,winner_team,sep=" - "),
+             Loser=str_c(loser_firstlast,loser_team,sep=" - "),
+             Score=str_c(winner_match_points,loser_match_points,sep= "-")) %>% 
+      select(Round=round,Weight=weight_class,
+             Winner,Result=result,
+             Loser,Score,
+             `Termination Time`=termination_time,
+             `Team Points Secured`=winner_team_points_secured)
+    
+    datatable(
+      
+     dat
+      
+    )
+    
+  })
+
   
   # make tcareers by wrestlers filter reactively
   
