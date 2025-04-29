@@ -27,6 +27,50 @@ conflicts_prefer(DT::renderDT,
 matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773")
 wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048")
 
+# get the amount of points already earned
+# by each wrestler at the start of each season
+
+wrestlers_master2 <- wrestlers_master %>% 
+  arrange(wrestler_id,year) %>% 
+  group_by(wrestler_id) %>% 
+  mutate(cumulative_prior_points=lag(cumsum(team_points),default=0),
+         cumulative_prior_aa=lag(cumsum(!is.na(placement)), default=NA),
+         cumulative_prior_titles=lag(cumsum(placement=="First"), default=0),
+         cumulative_prior_finalists=lag(cumsum(placement %in% c("First","Second")), default=0)) %>%
+  mutate(cumulative_prior_aa=ifelse(is.na(cumulative_prior_aa),0,
+                                    cumulative_prior_aa),
+         cumulative_prior_titles=ifelse(is.na(cumulative_prior_titles),0,
+                                    cumulative_prior_titles),
+         cumulative_prior_finalists=ifelse(is.na(cumulative_prior_finalists),0,
+                                        cumulative_prior_finalists),
+         prior_aa_logical=ifelse(cumulative_prior_aa>0,1,0),
+         prior_champ_logical=ifelse(cumulative_prior_titles>0,1,0),
+         prior_finalists_logical=ifelse(cumulative_prior_finalists>0,1,0)) %>% 
+  ungroup()
+
+# calculate total returning points by 
+# weight class/year
+
+weight_rankings <- wrestlers_master2 %>% 
+  group_by(year,weight_class) %>% 
+  summarize(earned_points=sum(cumulative_prior_points),
+            aa_finishes=sum(cumulative_prior_aa,na.rm=T),
+            individual_aa=sum(prior_aa_logical),
+            champ_finishes=sum(cumulative_prior_titles,na.rm=T),
+            individual_champs=sum(prior_champ_logical),
+            finalist_finishes=sum(cumulative_prior_finalists,na.rm=T),
+            individual_finalists=sum(prior_finalists_logical))
+
+weight_search <- wrestlers_master2 %>% 
+  filter(weight_class==177,
+         year==1982) %>% 
+  select(weight_class,year,wrestler,team,team_points,placement,
+         cumulative_prior_points,cumulative_prior_aa,
+         prior_aa_logical,prior_champ_logical,cumulative_prior_titles,
+         cumulative_prior_finalists,prior_aa_logical)
+  
+
+
 # start building individual page
 
 ind_years_formatted <- wrestlers_master %>% 
@@ -47,6 +91,8 @@ ind_years_formatted <- wrestlers_master %>%
                           levels=c("First","Second","Third","Fourth",
                                    "Fifth","Sixth","Seventh","Eighth",
                                    "DNP")))
+
+
 
 careers_summary1 <- wrestlers_master %>% 
   mutate(falls_time=na_if(falls_time, "NA"),
@@ -127,6 +173,36 @@ careers_formatted <- careers_summary2 %>%
          Falls=falls,`Total Falls Time`=fall_time,
          `Bonus Wins`=bonus,`Bonus Percent`=bonus_percent)
 
+
+# for ranking brackets join in career accomplishments
+# in addition to what they had already earned
+
+career_relevant <- careers_summary2 %>% 
+  select(wrestler_id,career_team_points=team_points,career_titles=titles,
+         career_finals=finals,career_aa=aa)
+
+wrestlers_master3 <- wrestlers_master2 %>% 
+  left_join(career_relevant,by="wrestler_id")
+
+
+weight_rankings <- wrestlers_master2 %>% 
+  group_by(year,weight_class) %>% 
+  summarize(earned_points=sum(cumulative_prior_points),
+            aa_finishes=sum(cumulative_prior_aa,na.rm=T),
+            individual_aa=sum(prior_aa_logical),
+            champ_finishes=sum(cumulative_prior_titles,na.rm=T),
+            individual_champs=sum(prior_champ_logical),
+            finalist_finishes=sum(cumulative_prior_finalists,na.rm=T),
+            individual_finalists=sum(prior_finalists_logical))
+
+weight_search <- wrestlers_master2 %>% 
+  filter(weight_class==177,
+         year==1982) %>% 
+  select(weight_class,year,wrestler,team,team_points,placement,
+         cumulative_prior_points,cumulative_prior_aa,
+         prior_aa_logical,prior_champ_logical,cumulative_prior_titles,
+         cumulative_prior_finalists,prior_aa_logical)
+
 # career filters? Team, Number of Titles, Number of AA
 
 # make some formatting changes for individual tournaments
@@ -153,6 +229,18 @@ team_choices <- ind_years_formatted %>%
   arrange(Team) %>% 
   pull(Team)
 
+
+team_results_annual <- wrestlers_master %>% 
+  group_by(team,year) %>% 
+  summarize(score=sum(team_points,na.rm=T),
+            qualifiers=n(),
+            champs=sum(placement=="First",na.rm=T),
+            finalists=sum(placement %in% c("First","Second"),na.rm=T),
+            aa=sum(!is.na(placement)),
+            bonus_points=sum(bonus_points,na.rm=T))
+
+iowa <- team_results_annual %>% 
+  filter(team=="Iowa")
 
 # build user interface
 
