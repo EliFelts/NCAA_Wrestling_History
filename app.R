@@ -75,7 +75,7 @@ careers_summary1 <- wrestlers_master %>%
 
 # five correction
 
-fivers <- careers_summary %>% 
+fivers <- careers_summary1 %>% 
   filter(appearances>4)
 
 fivers_career_summary <- wrestlers_master %>% 
@@ -110,7 +110,24 @@ fivers_career_summary <- wrestlers_master %>%
 
 careers_summary2 <- careers_summary1 %>% 
   filter(appearances<5) %>% 
-  bind_rows(fivers_career_summary)
+  bind_rows(fivers_career_summary) %>% 
+  mutate(career_range=word(wrestler_id,2,sep="_"),
+         career_start=as.numeric(word(career_range,1,sep="-")),
+         career_end=as.numeric(word(career_range,2,sep="-")))
+
+careers_formatted <- careers_summary2 %>% 
+  mutate(Wrestler=word(wrestler_id,1,sep="_")) %>% 
+  select(wrestler_id,career_start,career_end,
+         Wrestler,`Years Active`=career_range,
+         `Team(s)`=teams,Appearances=appearances,
+         `Team Points`=team_points,Titles=titles,
+         `Team Points per Appearance`=points_per_tourney,
+         `Finals Appearances`=finals,
+         `AA Finishes`=aa,Wins=wins,Losses=losses,
+         Falls=falls,`Total Falls Time`=fall_time,
+         `Bonus Wins`=bonus,`Bonus Percent`=bonus_percent)
+
+# career filters? Team, Number of Titles, Number of AA
 
 # make some formatting changes for individual tournaments
 
@@ -128,6 +145,13 @@ ind_years_hist <- ind_years_formatted %>%
 
 ind_years_hist
 
+# make a vector of team
+# choices arranged alphabetically
+
+team_choices <- ind_years_formatted %>% 
+  distinct(Team) %>% 
+  arrange(Team) %>% 
+  pull(Team)
 
 
 # build user interface
@@ -158,10 +182,17 @@ ui <- page_navbar(
                                   value=c(1980,max(wrestlers_master$year)),
                                   sep=""),
                       
-                      uiOutput("team_options"),
 
-                      
-                      
+                      pickerInput(inputId = "team_filter",
+                                  label="Filter by Team",
+                                  choices=team_choices,
+                                  selected=team_choices,
+                                  multiple=TRUE,
+                                  options=list(
+                                    `actions-box` = TRUE,
+                                    `live-search` = TRUE
+                                                )),
+
                       pickerInput(inputId = "placement_filter",
                                   label="Filter by Placement",
                                   choices=levels(ind_years_formatted$Placement),
@@ -199,12 +230,23 @@ ui <- page_navbar(
           
                         "Filter Careers",
                         
-                        sliderInput(inputId = "ind_dates",
+                        sliderInput(inputId = "career_dates",
                                     label="Choose a range of years",
                                     min=min(wrestlers_master$year),
                                     max=max(wrestlers_master$year),
-                                    value=c(1980,max(wrestlers_master$year)),
+                                    value=c(1980,max(careers_summary2$career_end)),
                                     sep=""),
+                        
+                        pickerInput(inputId = "career_team_filter",
+                                    label="Filter by Team",
+                                    choices=team_choices,
+                                    selected=team_choices,
+                                    multiple=TRUE,
+                                    options=list(
+                                      `actions-box` = TRUE,
+                                      `live-search` = TRUE
+                                    ))
+                        
                         
                         
                       )
@@ -232,7 +274,23 @@ ui <- page_navbar(
                       
                     )),
   
-  nav_panel("Individual Career Data")
+  nav_panel("Individual Career Data",
+            
+            page_fillable(
+              
+              
+              
+              card(
+                
+                card_header("Career Summaries"),
+                            DTOutput("careers_table"),
+                            full_screen = TRUE)
+                
+             
+              
+              
+            )
+            )
                     
                   
                   
@@ -262,30 +320,7 @@ server <- function(input,output,session){
     
   })
   
-  # make the teams available selectInput reactive so
-  # it only includes the teams avaialable in the date range selected
-  
-  output$team_options <- renderUI({
-    
-    req(input$ind_dates)
-    
-    dat <- ind_tourneys_reactive() %>% 
-      arrange(Team)
-    
-    pickerInput(inputId = "team_filter",
-                label="Filter by Team",
-                choices=unique(dat$Team),
-                selected=unique(dat$Team),
-                multiple=TRUE,
-                options=list(
-                  
-                  `actions-box` = TRUE,
-                  `live-search` = TRUE
-                  
-                ))
-    
-    
-  })
+
   
   # render a data table based on filters
   
@@ -294,6 +329,38 @@ server <- function(input,output,session){
     ind_tourneys_reactive() %>% 
       filter(Team %in% input$team_filter) %>% 
       arrange(desc(`Team Points`))
+    
+  })
+  
+  # make tcareers by wrestlers filter reactively
+  
+  careers_reactive <- reactive({
+    
+    req(input$career_dates)
+    
+    career_min <- min(input$career_dates)
+    career_max <- max(input$career_dates)
+    
+    career.dat <- careers_formatted %>% 
+      filter(career_start>=career_min,
+            career_end<=career_max,
+            ) %>% 
+      select(-c(wrestler_id,career_start,career_end))
+    
+    
+  })
+  
+  
+  
+  # render a data table based on filters
+  
+  output$careers_table <- renderDT({
+    
+    dat <- careers_reactive() %>% 
+      arrange(desc(`Team Points`))
+    
+    datatable(dat,
+              filter="top")
     
   })
   
