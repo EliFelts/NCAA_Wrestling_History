@@ -438,7 +438,7 @@ ui <- page_navbar(
               layout_columns(
               
                 
-                col_widths=c(6,6),
+                col_widths=c(6,6),6,
               
               card(
                 
@@ -450,6 +450,13 @@ ui <- page_navbar(
                 card_header("Individual Seasons for Selected Wrestler"),
                 DTOutput("seasons_careerfilter_table"),
                 full_screen = TRUE)
+                
+              ),
+              
+              card(
+                card_header("Matches for Selected Wrestler"),
+                DTOutput("career_matches_table"),
+                full_screen = TRUE
                 
               )
                 
@@ -654,6 +661,50 @@ server <- function(input,output,session){
       options=list(pageLength=25))
 
 
+    
+  })
+  
+  # filter individual matches based on a selected individual
+  # from the career tourneys table, first create
+  # a reactive object of the selected row (right now
+  # only allowing a single selection)
+  
+  career_matches_reactive <- reactive({
+    
+    req(seasons_reactive())
+    
+    dat <- seasons_reactive()
+    
+    output <- matches_master %>%
+      filter(winner_wrestler_id %in% dat$wrestler_id|loser_wrestler_id%in% dat$wrestler_id) %>%
+      arrange(year,round)
+    
+  })  
+
+  
+  # make the filtered matches for selected careers render
+  # to a datatable object
+  
+  output$career_matches_table <- renderDT({
+    
+    req(seasons_reactive())
+    
+    dat <- career_matches_reactive() %>% 
+      mutate(Winner=str_c(winner_firstlast,winner_team,sep=" - "),
+             Loser=str_c(loser_firstlast,loser_team,sep=" - "),
+             Score=str_c(winner_match_points,loser_match_points,sep= "-")) %>% 
+      select(Year=year,Round=round,Weight=weight_class,
+             Winner,Result=result,
+             Loser,Score,
+             `Termination Time`=termination_time,
+             `Team Points Secured`=winner_team_points_secured)
+    
+    datatable(
+      
+      dat,
+      options=list(pageLength=25)
+      
+    )
     
   })
   
