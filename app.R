@@ -12,6 +12,7 @@ library(bsicons)
 library(fontawesome)
 library(arrow)
 library(hms)
+library(forcats)
 
 
 conflicts_prefer(DT::renderDT,
@@ -20,14 +21,27 @@ conflicts_prefer(DT::renderDT,
                  plotly::layout)
 
 
+
+# need to correct seeds because of team mismatch
+# in original join
+
+seeds_correct <- read_sheet("https://docs.google.com/spreadsheets/d/1Ot6SxKRJS4OHhIvXXp0pXFKAxs7p5_QDRXfIlLJfwh4/edit?gid=1291266525#gid=1291266525")
+
 # right now reading in from google sheets
 # because cleaning up a couple things still; will
 # move these to feather to improve speed later
 
 matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773") %>% 
   mutate(winner_firstlast=str_remove(winner, " \\(.*\\)$"),
-         loser_firstlast=str_remove(loser, " \\(.*\\)$"))
-wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048")
+         loser_firstlast=str_remove(loser, " \\(.*\\)$")) 
+
+
+wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048")%>% 
+  select(-c(seed)) %>% 
+  left_join(seeds_correct,by=c("wrestler","weight_class",
+                               "year","team"))
+
+
 
 # get the amount of points already earned
 # by each wrestler at the start of each season
@@ -80,19 +94,21 @@ ind_years_formatted <- wrestlers_master %>%
          Record=str_c(wins,losses,sep="-"),
          Matches=wins+losses,
          `Bonus Percent`=round(bonus/Matches*100)) %>% 
-  select(Name = display_name,Team=team,Weight=weight_class,
+  mutate(Name = display_name,Team=team,Weight=weight_class,
          Seed=seed,
          Year=year,
          Placement=placement,`Team Points`=team_points,
          `Bonus Points`=bonus_points,Record,
          Terminations=terminations,Pins=falls,
          Bonus=bonus,
-         `Bonus Percent`,Matches,Wins=wins) %>% 
+         `Bonus Percent`,Matches,Wins=wins) %>%
   mutate(Placement=ifelse(is.na(Placement),"DNP",Placement),
          Placement=factor(Placement,
                           levels=c("First","Second","Third","Fourth",
                                    "Fifth","Sixth","Seventh","Eighth",
-                                   "DNP")))
+                                   "DNP")),
+         Seed=as.factor(seed),
+         Seed=fct_na_value_to_level(Seed, "Unseeded"))
 
 
 
@@ -304,8 +320,8 @@ ui <- page_navbar(
                       
                       pickerInput(inputId = "seed_filter",
                                   label="Filter by Seed",
-                                  choices=seq(1,33,1),
-                                  selected=seq(1,33,1),
+                                  choices=levels(ind_years_formatted$Seed),
+                                  selected=levels(ind_years_formatted$Seed),
                                   multiple=TRUE,
                                   options=list(
                                     
@@ -361,6 +377,10 @@ ui <- page_navbar(
   nav_panel("Individual Season Data",
 
             page_fillable(
+              
+              layout_columns(
+                
+                col_widths=c(6,6),
                       
                       card(
                         
@@ -377,6 +397,7 @@ ui <- page_navbar(
                         full_screen = TRUE
                         
                       )
+              )
                       
                     )),
   
@@ -423,7 +444,7 @@ server <- function(input,output,session){
              Placement %in% input$placement_filter,
              Seed %in% input$seed_filter) %>% 
       filter(Team %in% input$team_filter) %>% 
-      arrange(desc(`Team Points`))
+      arrange(desc(`Team Points`)) 
     
     
   })
@@ -434,13 +455,13 @@ server <- function(input,output,session){
   
   output$ind_tourneys_table <- renderDT({
     
-    dat <- ind_tourneys_reactive() 
+    dat <- ind_tourneys_reactive() %>% 
+      select(Name,Team,Weight,Seed,Year,Placement,`Team Points`,`Bonus Percent`)
     
     datatable(
       dat,
       selection="single",
-      options=list(pageLength=25)
-    )
+      options=list(pageLength=25))
     
   })
   
