@@ -160,8 +160,9 @@ careers_summary1 <- wrestlers_master %>%
             terminations=sum(terminations,na.rm=T),
             bonus=sum(bonus,na.rm=T),
             termination_percent=round(terminations/matches*100),
-            bonus_percent=round(bonus/matches*100)) %>%
-  mutate(points_per_tourney=team_points/appearances) %>% 
+            bonus_percent=round(bonus/matches*100),
+            finishes=paste(placement, collapse = ", ")) %>%
+  mutate(points_per_tourney=round(team_points/appearances,2)) %>% 
   arrange(-team_points)
 
 # five correction
@@ -195,8 +196,9 @@ fivers_career_summary <- wrestlers_master %>%
             terminations=sum(terminations,na.rm=T),
             bonus=sum(bonus,na.rm=T),
             termination_percent=round(terminations/matches*100),
-            bonus_percent=round(bonus/matches*100)) %>%
-  mutate(points_per_tourney=team_points/appearances) %>% 
+            bonus_percent=round(bonus/matches*100),
+            finishes=paste(placement, collapse = ", ")) %>%
+  mutate(points_per_tourney=round(team_points/appearances,2)) %>% 
   arrange(-team_points)
 
 careers_summary2 <- careers_summary1 %>% 
@@ -211,6 +213,7 @@ careers_formatted <- careers_summary2 %>%
   select(wrestler_id,career_start,career_end,
          Wrestler,`Years Active`=career_range,
          `Team(s)`=teams,Appearances=appearances,
+         Placements=finishes,
          `Team Points`=team_points,Titles=titles,
          `Team Points per Appearance`=points_per_tourney,
          `Finals Appearances`=finals,
@@ -557,7 +560,12 @@ server <- function(input,output,session){
     req(input$career_dates)
     
     teams_selected <- input$career_team_filter
-    team_pattern <- paste0("\\b(", paste0(teams_selected, collapse="|"), ")\\b")
+    team_pattern <-  paste0(
+      "(^|,\\s*)(",                 # start of string or “comma+optional spaces”
+      paste0(teams_selected, collapse="|"),  # Iowa|Oklahoma State
+      ")(?=,|$)"                    # followed by comma or end-of-string
+    )
+       
     
     career_min <- min(input$career_dates)
     career_max <- max(input$career_dates)
@@ -567,7 +575,8 @@ server <- function(input,output,session){
             career_end<=career_max,
             str_detect(`Team(s)`, regex(team_pattern))
             ) %>% 
-      select(-c(wrestler_id,career_start,career_end))
+      select(-c(wrestler_id,career_start,career_end,
+                Falls,`Total Falls Time`,`Bonus Wins`))
     
     
   })
@@ -582,7 +591,24 @@ server <- function(input,output,session){
       arrange(desc(`Team Points`))
     
     datatable(dat,
-              filter="top")
+              filter="top",
+              selection="single",
+              options=list(pageLength=25))
+    
+  })
+  
+  # filter individual years based on a selected individual
+  # careers from the individual career table, first create
+  # a reactive object of the selected row (right now
+  # only allowing a single selection)
+  
+  seasons_reactive <- reactive({
+    
+    career_dat <- careers_reactive()
+    selected_careers <- input$careers_table_rows_selected 
+    
+    dat <-   career_dat[selected_careers,]
+    
     
   })
   
