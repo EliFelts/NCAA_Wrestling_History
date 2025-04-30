@@ -438,7 +438,7 @@ ui <- page_navbar(
               layout_columns(
               
                 
-                col_widths=c(6,6),6,
+                col_widths=c(6,6,6),
               
               card(
                 
@@ -449,16 +449,14 @@ ui <- page_navbar(
               card(
                 card_header("Individual Seasons for Selected Wrestler"),
                 DTOutput("seasons_careerfilter_table"),
-                full_screen = TRUE)
-                
-              ),
+                full_screen = TRUE),
               
               card(
                 card_header("Matches for Selected Wrestler"),
                 DTOutput("career_matches_table"),
-                full_screen = TRUE
+                full_screen = TRUE)
                 
-              )
+              ),
                 
              
               
@@ -591,7 +589,8 @@ server <- function(input,output,session){
       filter(career_start>=career_min,
             career_end<=career_max,
             str_detect(`Team(s)`, regex(team_pattern))
-            ) 
+            ) %>% 
+      arrange(desc(`Team Points`))
     
     
   })
@@ -603,7 +602,6 @@ server <- function(input,output,session){
   output$careers_table <- renderDT({
     
     dat <- careers_reactive() %>% 
-      arrange(desc(`Team Points`))%>% 
       select(-c(wrestler_id,career_start,career_end,
                 Falls,`Total Falls Time`,`Bonus Wins`))
     
@@ -712,3 +710,21 @@ server <- function(input,output,session){
 }
 
 shinyApp(ui,server)
+
+
+
+teams_selected.test <- team_choices
+team_pattern.test <-  paste0(
+  "(^|,\\s*)(",                 # start of string or “comma+optional spaces”
+  paste0(teams_selected.test, collapse="|"),  # Iowa|Oklahoma State
+  ")(?=,|$)"                    # followed by comma or end-of-string
+)
+
+career_filter_test <- careers_formatted %>% 
+  filter(career_start>=1980,
+         career_end<=2025,
+         str_detect(`Team(s)`, regex(team_pattern.test))
+  ) 
+
+missing_careers <- careers_formatted %>% 
+  anti_join(career_filter_test,by="wrestler_id")
