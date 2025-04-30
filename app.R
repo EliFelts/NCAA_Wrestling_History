@@ -435,13 +435,23 @@ ui <- page_navbar(
             
             page_fillable(
               
+              layout_columns(
               
+                
+                col_widths=c(6,6),
               
               card(
                 
                 card_header("Career Summaries"),
                             DTOutput("careers_table"),
-                            full_screen = TRUE)
+                            full_screen = TRUE),
+              
+              card(
+                card_header("Individual Seasons for Selected Wrestler"),
+                DTOutput("seasons_careerfilter_table"),
+                full_screen = TRUE)
+                
+              )
                 
              
               
@@ -553,7 +563,7 @@ server <- function(input,output,session){
   })
 
   
-  # make tcareers by wrestlers filter reactively
+  # make careers by wrestlers filter reactively
   
   careers_reactive <- reactive({
     
@@ -574,9 +584,7 @@ server <- function(input,output,session){
       filter(career_start>=career_min,
             career_end<=career_max,
             str_detect(`Team(s)`, regex(team_pattern))
-            ) %>% 
-      select(-c(wrestler_id,career_start,career_end,
-                Falls,`Total Falls Time`,`Bonus Wins`))
+            ) 
     
     
   })
@@ -588,7 +596,9 @@ server <- function(input,output,session){
   output$careers_table <- renderDT({
     
     dat <- careers_reactive() %>% 
-      arrange(desc(`Team Points`))
+      arrange(desc(`Team Points`))%>% 
+      select(-c(wrestler_id,career_start,career_end,
+                Falls,`Total Falls Time`,`Bonus Wins`))
     
     datatable(dat,
               filter="top",
@@ -611,6 +621,42 @@ server <- function(input,output,session){
     
     
   })
+  
+  # now filter the season reactively
+  
+  seasons_careerfilter_reactive <- reactive({
+    
+    req(seasons_reactive())
+    
+    dat <- seasons_reactive()
+    
+    output <- ind_years_formatted %>%
+      filter(wrestler_id %in% dat$wrestler_id) 
+    
+  })
+  
+  # make the filtered seasons for selected individual render
+  # to a datatable object
+  
+  output$seasons_careerfilter_table <- renderDT({
+    
+    # dat <- careers_reactive()
+    
+    req(seasons_reactive())
+    req(seasons_careerfilter_reactive())
+
+    dat <- seasons_careerfilter_reactive() %>%
+      select(Name,Team,Weight,Seed,Year,Placement,`Team Points`,`Bonus Percent`)
+
+    datatable(
+      dat,
+      selection="single",
+      options=list(pageLength=25))
+
+
+    
+  })
+  
   
 }
 
