@@ -33,7 +33,19 @@ seeds_correct <- read_sheet("https://docs.google.com/spreadsheets/d/1Ot6SxKRJS4O
 
 matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773") %>% 
   mutate(winner_firstlast=str_remove(winner, " \\(.*\\)$"),
-         loser_firstlast=str_remove(loser, " \\(.*\\)$")) 
+         loser_firstlast=str_remove(loser, " \\(.*\\)$"),
+         round=factor(round,levels=c("Prelim","Champ. Round 1","Champ. Round 2",
+                                     "Consolation Prelim",
+                                     "Cons. Round 1","Quarterfinal","Cons. Round 2","Cons. Round 3",
+                                     "Semifinal","Cons. Round 4","Cons. Round 5",
+                                     "Cons. Semi","7th Place Match",
+                                     "5th Place Match","3rd Place Match","1st Place Match",
+                                     "Cons. 2nd Quarterfinal","Cons. 2nd Semifinal",
+                                     "2nd Place Match","Cons. 3rd Quarterfinal",
+                                     "Cons. 3rd Semifinal","Round 1","Round 2",
+                                     "Round 3","Round 4","Round 5","Round 6",
+                                     "Round 7"
+                                     )))
 
 
 wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048")%>% 
@@ -42,6 +54,21 @@ wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUSc
                                "year","team"))
 
 
+# find wrestlers who won on their first appearance
+
+first_champs <- wrestlers_master %>% 
+  arrange(wrestler_id,year) %>% 
+  group_by(wrestler_id) %>% 
+  filter(year== min(year) & placement== "First") 
+
+first_champs_summarize <- wrestlers_master %>% 
+  inner_join(first_champs,by="wrestler_id") %>% 
+  group_by(wrestler_id) %>% 
+  summarize(finishes=paste(placement.x, collapse = ", "),
+            appearances=n()) %>% 
+  filter(appearances>3) %>% 
+  mutate(years=word(wrestler_id,2,sep="_"),
+         start_year=as.numeric(word(years,1,sep="-")))
 
 # get the amount of points already earned
 # by each wrestler at the start of each season
@@ -489,10 +516,10 @@ server <- function(input,output,session){
     dat <- tourneys_reactive()
 
     output <- matches_master %>%
-      filter(winner_firstlast %in% dat$Name|loser_firstlast %in% dat$Name,
+      filter(winner_wrestler_id %in% dat$wrestler_id|loser_wrestler_id%in% dat$wrestler_id,
              year %in% dat$Year,
              weight_class %in% dat$Weight) %>%
-      arrange(bout)
+      arrange(round)
 
   })
   
@@ -529,12 +556,16 @@ server <- function(input,output,session){
     
     req(input$career_dates)
     
+    teams_selected <- input$career_team_filter
+    team_pattern <- paste0("\\b(", paste0(teams_selected, collapse="|"), ")\\b")
+    
     career_min <- min(input$career_dates)
     career_max <- max(input$career_dates)
     
     career.dat <- careers_formatted %>% 
       filter(career_start>=career_min,
             career_end<=career_max,
+            str_detect(`Team(s)`, regex(team_pattern))
             ) %>% 
       select(-c(wrestler_id,career_start,career_end))
     
