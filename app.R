@@ -491,7 +491,24 @@ ui <- page_navbar(
   
   nav_panel("Team Scores by Season",
             
-            page_fillable()
+            page_fillable(
+              
+              layout_columns(
+                
+                
+                col_widths = c(6),
+                
+                card(
+                  
+                  card_header("Team Scores by Year"),
+                              DTOutput("teamscores_table"),
+                              full_screen = TRUE)
+                  
+                
+              )
+              
+              
+            )
     
     
     
@@ -740,25 +757,40 @@ server <- function(input,output,session){
     
   })
   
+  # make a reactive team score object
+  
+  teamscores_reactive <- reactive({
+    
+    team_results_annual %>% 
+      filter(year>=min(input$teamrace_years),
+             year<=max(input$teamrace_years)) %>% 
+      arrange(-score)
+    
+  })
+  
+  # make the filtered team score table
+  # render as a Data Table
+  
+  output$teamscores_table <- renderDT({
+    
+    dat <- teamscores_reactive() %>% 
+      rename(Team=team,Year=year,Score=score,
+             Qualifiers=qualifiers,Champs=champs,
+             Finalists=finalists,AA=aa,
+             `Bonus Points`=bonus_points)
+    
+    datatable(
+      
+      dat,
+      options=list(pageLength=25)
+      
+    )
+    
+  })
+  
   
 }
 
 shinyApp(ui,server)
 
 
-
-teams_selected.test <- team_choices
-team_pattern.test <-  paste0(
-  "(^|,\\s*)(",                 # start of string or “comma+optional spaces”
-  paste0(teams_selected.test, collapse="|"),  # Iowa|Oklahoma State
-  ")(?=,|$)"                    # followed by comma or end-of-string
-)
-
-career_filter_test <- careers_formatted %>% 
-  filter(career_start>=1980,
-         career_end<=2025,
-         str_detect(`Team(s)`, regex(team_pattern.test))
-  ) 
-
-missing_careers <- careers_formatted %>% 
-  anti_join(career_filter_test,by="wrestler_id")
