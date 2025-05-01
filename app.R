@@ -400,6 +400,31 @@ ui <- page_navbar(
                     
                     
                     
+                  ),
+                  
+                  conditionalPanel(
+                    
+                    "input.nav==`Team Scores by Season`",
+                    
+                    accordion(
+                      
+                      accordion_panel(
+                        
+                        "Filter Team Races",
+                        
+                        sliderInput(inputId="teamrace_years",
+                                    label="Choose years",
+                                    min=min(team_results_annual$year),
+                                    max=max(team_results_annual$year),
+                                    value=c(1980,max(team_results_annual$year)),
+                                    sep="")
+                        
+                      )
+                      
+                      
+                    )
+                    
+                    
                   )
                   
                   ),
@@ -462,7 +487,16 @@ ui <- page_navbar(
               
               
             )
-            )
+            ),
+  
+  nav_panel("Team Scores by Season",
+            
+            page_fillable()
+    
+    
+    
+    
+  )
                     
                   
                   
