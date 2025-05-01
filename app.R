@@ -417,7 +417,18 @@ ui <- page_navbar(
                                     min=min(team_results_annual$year),
                                     max=max(team_results_annual$year),
                                     value=c(1980,max(team_results_annual$year)),
-                                    sep="")
+                                    sep=""),
+                        
+                        pickerInput(inputId = "teamrace_team_filter",
+                                    label="Filter by Team",
+                                    choices=team_choices,
+                                    selected=team_choices,
+                                    multiple=TRUE,
+                                    options=list(
+                                      `actions-box` = TRUE,
+                                      `live-search` = TRUE
+                                    ))
+                        
                         
                       )
                       
@@ -496,13 +507,29 @@ ui <- page_navbar(
               layout_columns(
                 
                 
-                col_widths = c(6),
+                col_widths = c(6,6,6),
                 
                 card(
                   
                   card_header("Team Scores by Year"),
                               DTOutput("teamscores_table"),
-                              full_screen = TRUE)
+                              full_screen = TRUE),
+                
+                card(
+                  
+                  card_header("Individual Performances from Selected Team"),
+                  DTOutput("teamseasons_careerfilter_table"),
+                  full_screen = TRUE),
+                
+                card(
+                  
+                  card_header("Individual Matches from Selected Team"),
+                  DTOutput("teammatches_filter_table"),
+                  full_screen = TRUE
+                  
+                )
+                  
+                
                   
                 
               )
@@ -763,7 +790,8 @@ server <- function(input,output,session){
     
     team_results_annual %>% 
       filter(year>=min(input$teamrace_years),
-             year<=max(input$teamrace_years)) %>% 
+             year<=max(input$teamrace_years),
+             team %in% input$teamrace_team_filter) %>% 
       arrange(-score)
     
   })
@@ -782,12 +810,105 @@ server <- function(input,output,session){
     datatable(
       
       dat,
+      selection=list(mode="single"),
       options=list(pageLength=25)
       
     )
     
   })
   
+  # filter individual years based on a selected team
+  # careers from the individual career table, first create
+  # a reactive object of the selected row (right now
+  # only allowing a single selection)
+  
+  teamseasons_reactive <- reactive({
+    
+    teamscores_dat <- teamscores_reactive()
+    selected_seasons <- input$teamscores_table_rows_selected 
+    
+    dat <-   teamscores_dat[selected_seasons,]
+    
+    
+  })
+  
+  # now filter the individual seasons reactively
+  
+  teamseasons_careerfilter_reactive <- reactive({
+    
+    req(teamseasons_reactive())
+    
+    dat <- teamseasons_reactive()
+    
+    output <- ind_years_formatted %>%
+      filter(team %in% dat$team,
+             year %in% dat$year) 
+    
+  })
+  
+  # make the filtered team seasons for selected individual render
+  # to a datatable object
+  
+  output$teamseasons_careerfilter_table <- renderDT({
+    
+    # dat <- careers_reactive()
+    
+    req(teamseasons_reactive())
+    req(teamseasons_careerfilter_reactive())
+    
+    dat <- teamseasons_careerfilter_reactive() %>%
+      select(Name,Team,Weight,Seed,Year,Placement,`Team Points`,`Bonus Percent`) %>% 
+      arrange(Weight)
+    
+    datatable(
+      dat,
+      selection="single",
+      options=list(pageLength=25))
+    
+    
+    
+  })
+  
+  # filter matches reactively from the selected team/year combo
+  
+  team_seasons_matchfilter_reactive <- reactive({
+    
+    req(teamseasons_reactive())
+    
+    dat <- teamseasons_reactive()
+    
+    output <- matches_master %>% 
+      filter(winner_team %in% dat$team|loser_team %in% dat$team,
+             year %in% dat$year)
+    
+  })
+  
+  # render a data table of all the individual matches for the
+  # team/year selection
+  
+  output$teammatches_filter_table <- renderDT({
+    
+    req(teamseasons_reactive())
+    
+    dat <- team_seasons_matchfilter_reactive() %>% 
+      mutate(Winner=str_c(winner_firstlast,winner_team,sep=" - "),
+             Loser=str_c(loser_firstlast,loser_team,sep=" - "),
+             Score=str_c(winner_match_points,loser_match_points,sep= "-")) %>% 
+      select(Year=year,Round=round,Weight=weight_class,
+             Winner,Result=result,
+             Loser,Score,
+             `Termination Time`=termination_time,
+             `Team Points Secured`=winner_team_points_secured)
+    
+    datatable(
+      
+      dat,
+      options=list(pageLength=25)
+      
+    )
+    
+    
+  })
   
 }
 
