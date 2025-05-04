@@ -26,61 +26,35 @@ conflicts_prefer(DT::renderDT,
 
 team_summaries <- team_results_annual %>% 
   group_by(team) %>% 
-  summarize(Appearances=n())
+  summarize(Appearances=n()) %>% 
+  ungroup()
 
 
 team_history_ui <- function(id){
   
   ns <- NS(id)
-
+  
   fluidPage(
-  sidebar=sidebar(width=500,
-                  
-                  conditionalPanel(
-    
-    "input.nav==`Team History`",
-    
-    accordion(
-      
-      accordion_panel(
-        
-        "Team Filter",
-        
-        pickerInput(inputId = ns("teamhistory_filter"),
-                    label="Choose a Team",
-                    choices=team_choices,
-                    selected="Penn State",
-                    `live-search` = TRUE)
-        
-        
+    sidebarLayout(
+      sidebarPanel(
+        pickerInput(
+          inputId = ns("teamhistory_filter"),
+          label = "Choose a Team",
+          choices = unique(team_summaries$team),
+          multiple = FALSE,
+          options = list(`live-search` = TRUE)
         )
-              )
-                  )
-  
-  )
-  )
-  
-  nav_panel(
-    
-    "Team History",
-    
-    page_fillable(
-      
-      layout_columns(
-        
+      ),
+      mainPanel(
         card(
-          
           card_header("Team Summaries"),
-          DTOutput("team_summary_table"),
+          DTOutput(ns("team_summary_table")),
           full_screen = TRUE
-          
         )
-        
       )
-      
     )
-    
   )
+
   
 }
 
@@ -90,7 +64,7 @@ team_history_server <- function(id){
     
     team_summary_reactive <- reactive({
       
-      team_summaries %>% 
+      dat <- team_summaries %>% 
         filter(team %in% input$teamhistory_filter)
       
       
@@ -106,4 +80,17 @@ team_history_server <- function(id){
   
 }
 
+test_ui <- fluidPage(
+  theme = bs_theme(preset = "cerulean"),
+  team_history_ui("test_team_history")
+)
+
+test_server <- function(input,output,seeion){
+  
+  team_history_server("test_team_history")
+  
+}
+
+
+shinyApp(test_ui,test_server)
 
