@@ -15,264 +15,366 @@ library(hms)
 library(forcats)
 
 
-conflicts_prefer(DT::renderDT,
-                 dplyr::filter,
-                 dplyr::lag,
-                 plotly::layout)
+conflicts_prefer(
+  DT::renderDT,
+  dplyr::filter,
+  dplyr::lag,
+  plotly::layout
+)
 
 
 
 # need to correct seeds because of team mismatch
 # in original join
 
-seeds_correct <- read_sheet("https://docs.google.com/spreadsheets/d/1Ot6SxKRJS4OHhIvXXp0pXFKAxs7p5_QDRXfIlLJfwh4/edit?gid=1291266525#gid=1291266525")
+seeds_correct <- read_sheet("https://docs.google.com/spreadsheets/d/1Ot6SxKRJS4OHhIvXXp0pXFKAxs7p5_QDRXfIlLJfwh4/edit?gid=1291266525#gid=1291266525") |>
+  filter(!(wrestler == "Lee Roy Smith (Oklahoma State)" & is.na(seed)))
+
+saveRDS(seeds_correct, "data-raw/seeds")
 
 # right now reading in from google sheets
 # because cleaning up a couple things still; will
 # move these to feather to improve speed later
 
-matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773") %>% 
-  mutate(winner_firstlast=str_remove(winner, " \\(.*\\)$"),
-         loser_firstlast=str_remove(loser, " \\(.*\\)$"),
-         round=factor(round,levels=c("Prelim","Champ. Round 1","Champ. Round 2",
-                                     "Consolation Prelim",
-                                     "Cons. Round 1","Quarterfinal","Cons. Round 2","Cons. Round 3",
-                                     "Semifinal","Cons. Round 4","Cons. Round 5",
-                                     "Cons. Semi","7th Place Match",
-                                     "5th Place Match","3rd Place Match","1st Place Match",
-                                     "Cons. 2nd Quarterfinal","Cons. 2nd Semifinal",
-                                     "2nd Place Match","Cons. 3rd Quarterfinal",
-                                     "Cons. 3rd Semifinal","Round 1","Round 2",
-                                     "Round 3","Round 4","Round 5","Round 6",
-                                     "Round 7"
-                                     )))
+matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773") %>%
+  mutate(
+    winner_firstlast = str_remove(winner, " \\(.*\\)$"),
+    loser_firstlast = str_remove(loser, " \\(.*\\)$"),
+    round = factor(round, levels = c(
+      "Prelim", "Champ. Round 1", "Champ. Round 2",
+      "Consolation Prelim",
+      "Cons. Round 1", "Quarterfinal", "Cons. Round 2", "Cons. Round 3",
+      "Semifinal", "Cons. Round 4", "Cons. Round 5",
+      "Cons. Semi", "7th Place Match",
+      "5th Place Match", "3rd Place Match", "1st Place Match",
+      "Cons. 2nd Quarterfinal", "Cons. 2nd Semifinal",
+      "2nd Place Match", "Cons. 3rd Quarterfinal",
+      "Cons. 3rd Semifinal", "Round 1", "Round 2",
+      "Round 3", "Round 4", "Round 5", "Round 6",
+      "Round 7"
+    ))
+  )
+
+saveRDS(matches_master, "data-raw/matches")
 
 
-wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048")%>% 
-  select(-c(seed)) %>% 
-  left_join(seeds_correct,by=c("wrestler","weight_class",
-                               "year","team"))
+finals_pins <- matches_master %>%
+  filter(
+    round == "1st Place Match",
+    result == "Fall"
+  )
+
+
+wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048") %>%
+  select(-c(seed)) %>%
+  left_join(seeds_correct, by = c(
+    "wrestler", "weight_class",
+    "year", "team"
+  ))
+
+saveRDS(wrestlers_master, "data-raw/wrestlers")
+
+search <- matches_master %>%
+  filter(
+    round == "Prelim",
+    year == 2012
+  )
+
+
+team_tally <- wrestlers_master %>%
+  group_by(team) %>%
+  tally()
 
 
 # find wrestlers who won on their first appearance
 
-first_champs <- wrestlers_master %>% 
-  arrange(wrestler_id,year) %>% 
-  group_by(wrestler_id) %>% 
-  filter(year== min(year) & placement== "First") 
+first_champs <- wrestlers_master %>%
+  arrange(wrestler_id, year) %>%
+  group_by(wrestler_id) %>%
+  filter(year == min(year) & placement == "First")
 
-first_champs_summarize <- wrestlers_master %>% 
-  inner_join(first_champs,by="wrestler_id") %>% 
-  group_by(wrestler_id) %>% 
-  summarize(finishes=paste(placement.x, collapse = ", "),
-            appearances=n()) %>% 
-  filter(appearances>3) %>% 
-  mutate(years=word(wrestler_id,2,sep="_"),
-         start_year=as.numeric(word(years,1,sep="-")))
+first_champs_summarize <- wrestlers_master %>%
+  inner_join(first_champs, by = "wrestler_id") %>%
+  group_by(wrestler_id) %>%
+  summarize(
+    finishes = paste(placement.x, collapse = ", "),
+    appearances = n()
+  ) %>%
+  filter(appearances > 3) %>%
+  mutate(
+    years = word(wrestler_id, 2, sep = "_"),
+    start_year = as.numeric(word(years, 1, sep = "-"))
+  )
 
 # get the amount of points already earned
 # by each wrestler at the start of each season
 
-wrestlers_master2 <- wrestlers_master %>% 
-  arrange(wrestler_id,year) %>% 
-  group_by(wrestler_id) %>% 
-  mutate(cumulative_prior_points=lag(cumsum(team_points),default=0),
-         cumulative_prior_aa=lag(cumsum(!is.na(placement)), default=NA),
-         cumulative_prior_titles=lag(cumsum(placement=="First"), default=0),
-         cumulative_prior_finalists=lag(cumsum(placement %in% c("First","Second")), default=0)) %>%
-  mutate(cumulative_prior_aa=ifelse(is.na(cumulative_prior_aa),0,
-                                    cumulative_prior_aa),
-         cumulative_prior_titles=ifelse(is.na(cumulative_prior_titles),0,
-                                    cumulative_prior_titles),
-         cumulative_prior_finalists=ifelse(is.na(cumulative_prior_finalists),0,
-                                        cumulative_prior_finalists),
-         prior_aa_logical=ifelse(cumulative_prior_aa>0,1,0),
-         prior_champ_logical=ifelse(cumulative_prior_titles>0,1,0),
-         prior_finalists_logical=ifelse(cumulative_prior_finalists>0,1,0)) %>% 
+wrestlers_master2 <- wrestlers_master %>%
+  arrange(wrestler_id, year) %>%
+  group_by(wrestler_id) %>%
+  mutate(
+    cumulative_prior_points = lag(cumsum(team_points), default = 0),
+    cumulative_prior_aa = lag(cumsum(!is.na(placement)), default = NA),
+    cumulative_prior_titles = lag(cumsum(placement == "First"), default = 0),
+    cumulative_prior_finalists = lag(cumsum(placement %in% c("First", "Second")), default = 0)
+  ) %>%
+  mutate(
+    cumulative_prior_aa = ifelse(is.na(cumulative_prior_aa), 0,
+      cumulative_prior_aa
+    ),
+    cumulative_prior_titles = ifelse(is.na(cumulative_prior_titles), 0,
+      cumulative_prior_titles
+    ),
+    cumulative_prior_finalists = ifelse(is.na(cumulative_prior_finalists), 0,
+      cumulative_prior_finalists
+    ),
+    prior_aa_logical = ifelse(cumulative_prior_aa > 0, 1, 0),
+    prior_champ_logical = ifelse(cumulative_prior_titles > 0, 1, 0),
+    prior_finalists_logical = ifelse(cumulative_prior_finalists > 0, 1, 0)
+  ) %>%
   ungroup()
 
-# calculate total returning points by 
+
+# calculate total returning points by
 # weight class/year
 
-weight_rankings <- wrestlers_master2 %>% 
-  group_by(year,weight_class) %>% 
-  summarize(earned_points=sum(cumulative_prior_points),
-            aa_finishes=sum(cumulative_prior_aa,na.rm=T),
-            individual_aa=sum(prior_aa_logical),
-            champ_finishes=sum(cumulative_prior_titles,na.rm=T),
-            individual_champs=sum(prior_champ_logical),
-            finalist_finishes=sum(cumulative_prior_finalists,na.rm=T),
-            individual_finalists=sum(prior_finalists_logical))
+weight_rankings <- wrestlers_master2 %>%
+  group_by(year, weight_class) %>%
+  summarize(
+    earned_points = sum(cumulative_prior_points),
+    aa_finishes = sum(cumulative_prior_aa, na.rm = T),
+    individual_aa = sum(prior_aa_logical),
+    champ_finishes = sum(cumulative_prior_titles, na.rm = T),
+    individual_champs = sum(prior_champ_logical),
+    finalist_finishes = sum(cumulative_prior_finalists, na.rm = T),
+    individual_finalists = sum(prior_finalists_logical)
+  )
 
-weight_search <- wrestlers_master2 %>% 
-  filter(weight_class==177,
-         year==1982) %>% 
-  select(weight_class,year,wrestler,team,team_points,placement,
-         cumulative_prior_points,cumulative_prior_aa,
-         prior_aa_logical,prior_champ_logical,cumulative_prior_titles,
-         cumulative_prior_finalists,prior_aa_logical)
-  
+weight_search <- wrestlers_master2 %>%
+  filter(
+    weight_class == 133,
+    year >= 2001
+  ) %>%
+  select(
+    weight_class, year, wrestler, team, team_points, placement,
+    cumulative_prior_points, cumulative_prior_aa,
+    prior_aa_logical, prior_champ_logical, cumulative_prior_titles,
+    cumulative_prior_finalists, prior_aa_logical
+  ) %>%
+  group_by(weight_class, year) %>%
+  summarize(
+    prior_champs = sum(prior_champ_logical, na.rm = T),
+    prior_titles = sum(cumulative_prior_titles),
+    prior_aa = sum(prior_aa_logical),
+    prior_aa_awards = sum(cumulative_prior_aa, na.rm = T)
+  )
+
+
+weight_search2 <- wrestlers_master2 %>%
+  filter(
+    weight_class == 133,
+    year == 2021
+  )
 
 
 # start building individual page
 
-ind_years_formatted <- wrestlers_master %>% 
-  mutate(display_name=word(wrestler_id,1,sep="_",),
-         Record=str_c(wins,losses,sep="-"),
-         Matches=wins+losses,
-         `Bonus Percent`=round(bonus/Matches*100)) %>% 
-  mutate(Name = display_name,Team=team,Weight=weight_class,
-         Seed=seed,
-         Year=year,
-         Placement=placement,`Team Points`=team_points,
-         `Bonus Points`=bonus_points,Record,
-         Terminations=terminations,Pins=falls,
-         Bonus=bonus,
-         `Bonus Percent`,Matches,Wins=wins) %>%
-  mutate(Placement=ifelse(is.na(Placement),"DNP",Placement),
-         Placement=factor(Placement,
-                          levels=c("First","Second","Third","Fourth",
-                                   "Fifth","Sixth","Seventh","Eighth",
-                                   "DNP")),
-         Seed=as.factor(seed),
-         Seed=fct_na_value_to_level(Seed, "Unseeded"))
+ind_years_formatted <- wrestlers_master %>%
+  mutate(
+    display_name = word(wrestler_id, 1, sep = "_", ),
+    Record = str_c(wins, losses, sep = "-"),
+    Matches = wins + losses,
+    `Bonus Percent` = round(bonus / Matches * 100)
+  ) %>%
+  mutate(
+    Name = display_name, Team = team, Weight = weight_class,
+    Seed = seed,
+    Year = year,
+    Placement = placement, `Team Points` = team_points,
+    `Bonus Points` = bonus_points, Record,
+    Terminations = terminations, Pins = falls,
+    Bonus = bonus,
+    `Bonus Percent`, Matches, Wins = wins
+  ) %>%
+  mutate(
+    Placement = ifelse(is.na(Placement), "DNP", Placement),
+    Placement = factor(Placement,
+      levels = c(
+        "First", "Second", "Third", "Fourth",
+        "Fifth", "Sixth", "Seventh", "Eighth",
+        "DNP"
+      )
+    ),
+    Seed = as.factor(seed),
+    Seed = fct_na_value_to_level(Seed, "Unseeded")
+  )
 
 
 
-careers_summary1 <- wrestlers_master %>% 
-  mutate(falls_time=na_if(falls_time, "NA"),
-         falls_time=as_hms(falls_time),
-         tech_time=na_if(tech_time,"NA"),
-         tech_time=as_hms(tech_time)) %>% 
-  group_by(wrestler_id) %>% 
-  summarize(teams_n=n_distinct(team),
-            teams=toString(unique(team)),
-            appearances=n(),
-            wins=sum(wins),
-            losses=sum(losses),
-            matches=sum(wins,losses),
-            team_points=sum(team_points),
-            titles=sum(placement=="First",na.rm=T),
-            finals=sum(placement %in% c("First","Second")),
-            aa=sum(!is.na(placement)),
-            falls=sum(falls,na.rm=T),
-            fall_time=as_hms(sum(falls_time,na.rm=T)),
-            terminations=sum(terminations,na.rm=T),
-            bonus=sum(bonus,na.rm=T),
-            termination_percent=round(terminations/matches*100),
-            bonus_percent=round(bonus/matches*100),
-            finishes=paste(placement, collapse = ", ")) %>%
-  mutate(points_per_tourney=round(team_points/appearances,2)) %>% 
+careers_summary1 <- wrestlers_master %>%
+  mutate(
+    falls_time = na_if(falls_time, "NA"),
+    falls_time = as_hms(falls_time),
+    tech_time = na_if(tech_time, "NA"),
+    tech_time = as_hms(tech_time)
+  ) %>%
+  group_by(wrestler_id) %>%
+  summarize(
+    teams_n = n_distinct(team),
+    teams = toString(unique(team)),
+    weights = toString(unique(weight_class)),
+    appearances = n(),
+    wins = sum(wins),
+    losses = sum(losses),
+    matches = sum(wins, losses),
+    team_points = sum(team_points),
+    titles = sum(placement == "First", na.rm = T),
+    finals = sum(placement %in% c("First", "Second")),
+    aa = sum(!is.na(placement)),
+    falls = sum(falls, na.rm = T),
+    fall_time = as_hms(sum(falls_time, na.rm = T)),
+    terminations = sum(terminations, na.rm = T),
+    bonus = sum(bonus, na.rm = T),
+    termination_percent = round(terminations / matches * 100),
+    bonus_percent = round(bonus / matches * 100),
+    finishes = paste(placement, collapse = ", ")
+  ) %>%
+  mutate(points_per_tourney = round(team_points / appearances, 2)) %>%
   arrange(-team_points)
 
 # five correction
 
-fivers <- careers_summary1 %>% 
-  filter(appearances>4)
+fivers <- careers_summary1 %>%
+  filter(appearances > 4)
 
-fivers_career_summary <- wrestlers_master %>% 
-  filter(wrestler_id %in% fivers$wrestler_id) %>% 
-  mutate(falls_time=na_if(falls_time, "NA"),
-         falls_time=as_hms(falls_time),
-         tech_time=na_if(tech_time,"NA"),
-         tech_time=as_hms(tech_time)) %>% 
-  group_by(wrestler_id) %>% 
-  arrange(wrestler_id,-team_points) %>% 
-  mutate(season_rank=row_number()) %>% 
-  filter(season_rank<5) %>% 
-  group_by(wrestler_id) %>% 
-  summarize(teams_n=n_distinct(team),
-            teams=toString(unique(team)),
-            appearances=n(),
-            wins=sum(wins),
-            losses=sum(losses),
-            matches=sum(wins,losses),
-            team_points=sum(team_points),
-            titles=sum(placement=="First",na.rm=T),
-            finals=sum(placement %in% c("First","Second")),
-            aa=sum(!is.na(placement)),
-            falls=sum(falls,na.rm=T),
-            fall_time=as_hms(sum(falls_time,na.rm=T)),
-            terminations=sum(terminations,na.rm=T),
-            bonus=sum(bonus,na.rm=T),
-            termination_percent=round(terminations/matches*100),
-            bonus_percent=round(bonus/matches*100),
-            finishes=paste(placement, collapse = ", ")) %>%
-  mutate(points_per_tourney=round(team_points/appearances,2)) %>% 
+fivers_career_summary <- wrestlers_master %>%
+  filter(wrestler_id %in% fivers$wrestler_id) %>%
+  mutate(
+    falls_time = na_if(falls_time, "NA"),
+    falls_time = as_hms(falls_time),
+    tech_time = na_if(tech_time, "NA"),
+    tech_time = as_hms(tech_time)
+  ) %>%
+  group_by(wrestler_id) %>%
+  arrange(wrestler_id, -team_points) %>%
+  mutate(season_rank = row_number()) %>%
+  filter(season_rank < 5) %>%
+  group_by(wrestler_id) %>%
+  summarize(
+    teams_n = n_distinct(team),
+    teams = toString(unique(team)),
+    weights = toString(unique(weight_class)),
+    appearances = n(),
+    wins = sum(wins),
+    losses = sum(losses),
+    matches = sum(wins, losses),
+    team_points = sum(team_points),
+    titles = sum(placement == "First", na.rm = T),
+    finals = sum(placement %in% c("First", "Second")),
+    aa = sum(!is.na(placement)),
+    falls = sum(falls, na.rm = T),
+    fall_time = as_hms(sum(falls_time, na.rm = T)),
+    terminations = sum(terminations, na.rm = T),
+    bonus = sum(bonus, na.rm = T),
+    termination_percent = round(terminations / matches * 100),
+    bonus_percent = round(bonus / matches * 100),
+    finishes = paste(placement, collapse = ", ")
+  ) %>%
+  mutate(points_per_tourney = round(team_points / appearances, 2)) %>%
   arrange(-team_points)
 
-careers_summary2 <- careers_summary1 %>% 
-  filter(appearances<5) %>% 
-  bind_rows(fivers_career_summary) %>% 
-  mutate(career_range=word(wrestler_id,2,sep="_"),
-         career_start=as.numeric(word(career_range,1,sep="-")),
-         career_end=as.numeric(word(career_range,2,sep="-")))
+careers_summary2 <- careers_summary1 %>%
+  filter(appearances < 5) %>%
+  bind_rows(fivers_career_summary) %>%
+  mutate(
+    career_range = word(wrestler_id, 2, sep = "_"),
+    career_start = as.numeric(word(career_range, 1, sep = "-")),
+    career_end = as.numeric(word(career_range, 2, sep = "-"))
+  )
 
-careers_formatted <- careers_summary2 %>% 
-  mutate(Wrestler=word(wrestler_id,1,sep="_")) %>% 
-  select(wrestler_id,career_start,career_end,
-         Wrestler,`Years Active`=career_range,
-         `Team(s)`=teams,Appearances=appearances,
-         Placements=finishes,
-         `Team Points`=team_points,Titles=titles,
-         `Team Points per Appearance`=points_per_tourney,
-         `Finals Appearances`=finals,
-         `AA Finishes`=aa,Wins=wins,Losses=losses,
-         Falls=falls,`Total Falls Time`=fall_time,
-         `Bonus Wins`=bonus,`Bonus Percent`=bonus_percent)
+search <- wrestlers_master %>%
+  anti_join(careers_summary2, by = "wrestler_id")
+
+careers_formatted <- careers_summary2 %>%
+  mutate(Wrestler = word(wrestler_id, 1, sep = "_")) %>%
+  select(wrestler_id, career_start, career_end,
+    Wrestler,
+    `Years Active` = career_range,
+    `Team(s)` = teams,
+    `Weight(s)` = weights,
+    Appearances = appearances,
+    Placements = finishes,
+    `Team Points` = team_points, Titles = titles,
+    `Team Points per Appearance` = points_per_tourney,
+    `Finals Appearances` = finals,
+    `AA Finishes` = aa, Wins = wins, Losses = losses,
+    Falls = falls, `Total Falls Time` = fall_time,
+    `Bonus Wins` = bonus, `Bonus Percent` = bonus_percent
+  )
 
 
 # for ranking brackets join in career accomplishments
 # in addition to what they had already earned
 
-career_relevant <- careers_summary2 %>% 
-  select(wrestler_id,career_team_points=team_points,career_titles=titles,
-         career_finals=finals,career_aa=aa) %>% 
-  mutate(career_aa_logical=ifelse(career_aa>0,1,0),
-         career_champ_logical=ifelse(career_titles>0,1,0))
+career_relevant <- careers_summary2 %>%
+  select(wrestler_id,
+    career_team_points = team_points, career_titles = titles,
+    career_finals = finals, career_aa = aa
+  ) %>%
+  mutate(
+    career_aa_logical = ifelse(career_aa > 0, 1, 0),
+    career_champ_logical = ifelse(career_titles > 0, 1, 0)
+  )
 
-wrestlers_master3 <- wrestlers_master2 %>% 
-  left_join(career_relevant,by="wrestler_id")
+wrestlers_master3 <- wrestlers_master2 %>%
+  left_join(career_relevant, by = "wrestler_id")
 
 
-weight_rankings <- wrestlers_master3 %>% 
-  group_by(year,weight_class) %>% 
-  summarize(earned_points=sum(cumulative_prior_points),
-            career_points=sum(career_team_points),
-            aa_finishes=sum(cumulative_prior_aa,na.rm=T),
-            career_aa_finishes=sum(career_aa,na.rm=T),
-            individual_aa=sum(prior_aa_logical),
-            individiaul_aa_career=sum(career_aa_logical),
-            champ_finishes=sum(cumulative_prior_titles,na.rm=T),
-            career_champ_finishes=sum(career_titles,na.rm=T),
-            individual_champs=sum(prior_champ_logical),
-            individual_champs_career=sum(career_champ_logical),
-            finalist_finishes=sum(cumulative_prior_finalists,na.rm=T),
-            individual_finalists=sum(prior_finalists_logical))
+weight_rankings <- wrestlers_master3 %>%
+  group_by(year, weight_class) %>%
+  summarize(
+    earned_points = sum(cumulative_prior_points),
+    career_points = sum(career_team_points),
+    aa_finishes = sum(cumulative_prior_aa, na.rm = T),
+    career_aa_finishes = sum(career_aa, na.rm = T),
+    individual_aa = sum(prior_aa_logical),
+    individiaul_aa_career = sum(career_aa_logical),
+    champ_finishes = sum(cumulative_prior_titles, na.rm = T),
+    career_champ_finishes = sum(career_titles, na.rm = T),
+    individual_champs = sum(prior_champ_logical),
+    individual_champs_career = sum(career_champ_logical),
+    finalist_finishes = sum(cumulative_prior_finalists, na.rm = T),
+    individual_finalists = sum(prior_finalists_logical)
+  )
 
-weight_search <- wrestlers_master3 %>% 
-  filter(weight_class==158,
-         year==1994) %>% 
-  select(weight_class,year,wrestler,team,team_points,placement,
-         cumulative_prior_points,cumulative_prior_aa,
-         prior_aa_logical,prior_champ_logical,cumulative_prior_titles,
-         cumulative_prior_finalists,prior_aa_logical,career_team_points,
-         career_aa,career_titles)
+weight_search <- wrestlers_master3 %>%
+  filter(
+    weight_class == 174,
+    year == 2022
+  ) %>%
+  select(
+    weight_class, year, wrestler, team, team_points, placement,
+    cumulative_prior_points, cumulative_prior_aa,
+    prior_aa_logical, prior_champ_logical, cumulative_prior_titles,
+    cumulative_prior_finalists, prior_aa_logical, career_team_points,
+    career_aa, career_titles
+  )
 
 # career filters? Team, Number of Titles, Number of AA
 
 # make some formatting changes for individual tournaments
 
-# think about adding a plot showing the distribution of team points among the 
+# think about adding a plot showing the distribution of team points among the
 # selection
 
-ind_years_hist <- ind_years_formatted %>% 
-  filter(Year>1980,Seed==2) %>% 
-  ggplot(aes(x=`Team Points`)) + 
-  geom_histogram()+
+ind_years_hist <- ind_years_formatted %>%
+  filter(Year > 1980, Seed == 2) %>%
+  ggplot(aes(x = `Team Points`)) +
+  geom_histogram() +
   facet_wrap(~Seed,
-             scales="free_y")+
-  coord_flip()+
+    scales = "free_y"
+  ) +
+  coord_flip() +
   theme_bw()
 
 ind_years_hist
@@ -280,638 +382,544 @@ ind_years_hist
 # make a vector of team
 # choices arranged alphabetically
 
-team_choices <- ind_years_formatted %>% 
-  distinct(Team) %>% 
-  arrange(Team) %>% 
+team_choices <- ind_years_formatted %>%
+  distinct(Team) %>%
+  arrange(Team) %>%
   pull(Team)
 
 
-team_results_annual <- wrestlers_master %>% 
-  group_by(team,year) %>% 
-  summarize(score=sum(team_points,na.rm=T),
-            qualifiers=n(),
-            champs=sum(placement=="First",na.rm=T),
-            finalists=sum(placement %in% c("First","Second"),na.rm=T),
-            aa=sum(!is.na(placement)),
-            bonus_points=sum(bonus_points,na.rm=T))
+team_results_annual <- wrestlers_master %>%
+  group_by(team, year) %>%
+  summarize(
+    score = sum(team_points, na.rm = T),
+    qualifiers = n(),
+    champs = sum(placement == "First", na.rm = T),
+    finalists = sum(placement %in% c("First", "Second"), na.rm = T),
+    aa = sum(!is.na(placement)),
+    bonus_points = sum(bonus_points, na.rm = T)
+  )
 
-iowa <- team_results_annual %>% 
-  filter(team=="Iowa")
+iowa <- team_results_annual %>%
+  filter(team == "Iowa")
 
 # build user interface
 
 ui <- page_navbar(
-  
-  
-  title="NCAA Wrestling Tournament Results",
-  
-  theme=bs_theme(preset="cerulean"),
-  
-  id="nav",
-  
-  sidebar=sidebar(width=500,
-                  
-                  conditionalPanel("input.nav==`Individual Season Data`",
-                  
-                  accordion(
-                    
-                    accordion_panel(
-                      
-                      "Explore Data",
-                      
-                      sliderInput(inputId = "ind_dates",
-                                  label="Choose a range of years",
-                                  min=min(wrestlers_master$year),
-                                  max=max(wrestlers_master$year),
-                                  value=c(1980,max(wrestlers_master$year)),
-                                  sep=""),
-                      
-
-                      pickerInput(inputId = "team_filter",
-                                  label="Filter by Team",
-                                  choices=team_choices,
-                                  selected=team_choices,
-                                  multiple=TRUE,
-                                  options=list(
-                                    `actions-box` = TRUE,
-                                    `live-search` = TRUE
-                                                )),
-
-                      pickerInput(inputId = "placement_filter",
-                                  label="Filter by Placement",
-                                  choices=levels(ind_years_formatted$Placement),
-                                  selected=levels(ind_years_formatted$Placement),
-                                  multiple=TRUE,
-                                  options=list(
-                                    
-                                    `actions-box` = TRUE
-                                    
-                                  )),
-                      
-                      pickerInput(inputId = "seed_filter",
-                                  label="Filter by Seed",
-                                  choices=levels(ind_years_formatted$Seed),
-                                  selected=levels(ind_years_formatted$Seed),
-                                  multiple=TRUE,
-                                  options=list(
-                                    
-                                    `actions-box` = TRUE
-                                    
-                                  ))
-                      
-                       
-                    )
-                    
-                    )),
-                  
-                  conditionalPanel(
-                    
-                    "input.nav==`Individual Career Data`",
-                    
-                    accordion(
-                      
-                      accordion_panel(
-          
-                        "Filter Careers",
-                        
-                        sliderInput(inputId = "career_dates",
-                                    label="Choose a range of years",
-                                    min=min(wrestlers_master$year),
-                                    max=max(wrestlers_master$year),
-                                    value=c(1980,max(careers_summary2$career_end)),
-                                    sep=""),
-                        
-                        pickerInput(inputId = "career_team_filter",
-                                    label="Filter by Team",
-                                    choices=team_choices,
-                                    selected=team_choices,
-                                    multiple=TRUE,
-                                    options=list(
-                                      `actions-box` = TRUE,
-                                      `live-search` = TRUE
-                                    ))
-                        
-                        
-                        
-                      )
-                      
-                      
-                    )
-                    
-                    
-                    
-                  ),
-                  
-                  conditionalPanel(
-                    
-                    "input.nav==`Team Scores by Season`",
-                    
-                    accordion(
-                      
-                      accordion_panel(
-                        
-                        "Filter Team Races",
-                        
-                        sliderInput(inputId="teamrace_years",
-                                    label="Choose years",
-                                    min=min(team_results_annual$year),
-                                    max=max(team_results_annual$year),
-                                    value=c(1980,max(team_results_annual$year)),
-                                    sep=""),
-                        
-                        pickerInput(inputId = "teamrace_team_filter",
-                                    label="Filter by Team",
-                                    choices=team_choices,
-                                    selected=team_choices,
-                                    multiple=TRUE,
-                                    options=list(
-                                      `actions-box` = TRUE,
-                                      `live-search` = TRUE
-                                    ))
-                        
-                        
-                      )
-                      
-                      
-                    )
-                    
-                    
-                  )
-                  
-                  ),
-  
-  nav_panel("Individual Season Data",
-
-            page_fillable(
-              
-              layout_columns(
-                
-                col_widths=c(6,6),
-                      
-                      card(
-                        
-                        card_header("Individual Tournament Summaries"),
-                        DTOutput("ind_tourneys_table"),
-                        full_screen = TRUE
-                        
-                      ),
-                      
-                      card(
-                        
-                        card_header("Individual Tournament Matches by Selection"),
-                        DTOutput("ind_matches_table"),
-                        full_screen = TRUE
-                        
-                      )
-              )
-                      
-                    )),
-  
-  nav_panel("Individual Career Data",
-            
-            page_fillable(
-              
-              layout_columns(
-              
-                
-                col_widths=c(6,6,6),
-              
-              card(
-                
-                card_header("Career Summaries"),
-                            DTOutput("careers_table"),
-                            full_screen = TRUE),
-              
-              card(
-                card_header("Individual Seasons for Selected Wrestler"),
-                DTOutput("seasons_careerfilter_table"),
-                full_screen = TRUE),
-              
-              card(
-                card_header("Matches for Selected Wrestler"),
-                DTOutput("career_matches_table"),
-                full_screen = TRUE)
-                
-              ),
-                
-             
-              
-              
+  title = "NCAA Wrestling Tournament Results",
+  theme = bs_theme(preset = "cerulean"),
+  id = "nav",
+  sidebar = sidebar(
+    width = 500,
+    conditionalPanel(
+      "input.nav==`Individual Season Data`",
+      accordion(
+        accordion_panel(
+          "Explore Data",
+          sliderInput(
+            inputId = "ind_dates",
+            label = "Choose a range of years",
+            min = min(wrestlers_master$year),
+            max = max(wrestlers_master$year),
+            value = c(1980, max(wrestlers_master$year)),
+            sep = ""
+          ),
+          pickerInput(
+            inputId = "team_filter",
+            label = "Filter by Team",
+            choices = team_choices,
+            selected = team_choices,
+            multiple = TRUE,
+            options = list(
+              `actions-box` = TRUE,
+              `live-search` = TRUE
             )
-            ),
-  
-  nav_panel("Team Scores by Season",
-            
-            page_fillable(
-              
-              layout_columns(
-                
-                
-                col_widths = c(6,6,6),
-                
-                card(
-                  
-                  card_header("Team Scores by Year"),
-                              DTOutput("teamscores_table"),
-                              full_screen = TRUE),
-                
-                card(
-                  
-                  card_header("Individual Performances from Selected Team"),
-                  DTOutput("teamseasons_careerfilter_table"),
-                  full_screen = TRUE),
-                
-                card(
-                  
-                  card_header("Individual Matches from Selected Team"),
-                  DTOutput("teammatches_filter_table"),
-                  full_screen = TRUE
-                  
-                )
-                  
-                
-                  
-                
-              )
-              
-              
+          ),
+          pickerInput(
+            inputId = "placement_filter",
+            label = "Filter by Placement",
+            choices = levels(ind_years_formatted$Placement),
+            selected = levels(ind_years_formatted$Placement),
+            multiple = TRUE,
+            options = list(
+              `actions-box` = TRUE
             )
-    
-    
-    
-    
+          ),
+          pickerInput(
+            inputId = "seed_filter",
+            label = "Filter by Seed",
+            choices = levels(ind_years_formatted$Seed),
+            selected = levels(ind_years_formatted$Seed),
+            multiple = TRUE,
+            options = list(
+              `actions-box` = TRUE
+            )
+          )
+        )
+      )
+    ),
+    conditionalPanel(
+      "input.nav==`Individual Career Data`",
+      accordion(
+        accordion_panel(
+          "Filter Careers",
+          sliderInput(
+            inputId = "career_dates",
+            label = "Choose a range of years",
+            min = min(wrestlers_master$year),
+            max = max(wrestlers_master$year),
+            value = c(1980, max(careers_summary2$career_end)),
+            sep = ""
+          ),
+          pickerInput(
+            inputId = "career_team_filter",
+            label = "Filter by Team",
+            choices = team_choices,
+            selected = team_choices,
+            multiple = TRUE,
+            options = list(
+              `actions-box` = TRUE,
+              `live-search` = TRUE
+            )
+          )
+        )
+      )
+    ),
+    conditionalPanel(
+      "input.nav==`Team Scores by Season`",
+      accordion(
+        accordion_panel(
+          "Filter Team Races",
+          sliderInput(
+            inputId = "teamrace_years",
+            label = "Choose years",
+            min = min(team_results_annual$year),
+            max = max(team_results_annual$year),
+            value = c(1980, max(team_results_annual$year)),
+            sep = ""
+          ),
+          pickerInput(
+            inputId = "teamrace_team_filter",
+            label = "Filter by Team",
+            choices = team_choices,
+            selected = team_choices,
+            multiple = TRUE,
+            options = list(
+              `actions-box` = TRUE,
+              `live-search` = TRUE
+            )
+          )
+        )
+      )
+    )
+  ),
+  nav_panel(
+    "Individual Season Data",
+    page_fillable(
+      layout_columns(
+        col_widths = c(6, 6),
+        card(
+
+          card_header("Individual Tournament Summaries"),
+          DTOutput("ind_tourneys_table"),
+          full_screen = TRUE
+        ),
+        card(
+
+          card_header("Individual Tournament Matches by Selection"),
+          DTOutput("ind_matches_table"),
+          full_screen = TRUE
+        )
+      )
+    )
+  ),
+  nav_panel(
+    "Individual Career Data",
+    page_fillable(
+      layout_columns(
+        col_widths = c(6, 6, 6),
+        card(
+
+          card_header("Career Summaries"),
+          DTOutput("careers_table"),
+          full_screen = TRUE
+        ),
+        card(
+          card_header("Individual Seasons for Selected Wrestler"),
+          DTOutput("seasons_careerfilter_table"),
+          full_screen = TRUE
+        ),
+        card(
+          card_header("Matches for Selected Wrestler"),
+          DTOutput("career_matches_table"),
+          full_screen = TRUE
+        )
+      ),
+    )
+  ),
+  nav_panel(
+    "Team Scores by Season",
+    page_fillable(
+      layout_columns(
+        col_widths = c(6, 6, 6),
+        card(
+
+          card_header("Team Scores by Year"),
+          DTOutput("teamscores_table"),
+          full_screen = TRUE
+        ),
+        card(
+
+          card_header("Individual Performances from Selected Team"),
+          DTOutput("teamseasons_careerfilter_table"),
+          full_screen = TRUE
+        ),
+        card(
+
+          card_header("Individual Matches from Selected Team"),
+          DTOutput("teammatches_filter_table"),
+          full_screen = TRUE
+        )
+      )
+    )
   )
-                    
-                  
-                  
-                  
-  
 )
 
-server <- function(input,output,session){
-  
-
-  
+server <- function(input, output, session) {
   # make the individual tournaments by wrestlers filter reactively
-  
+
   ind_tourneys_reactive <- reactive({
-    
     req(input$ind_dates)
-    
+
     ind_tourney_min <- min(input$ind_dates)
     ind_tourney_max <- max(input$ind_dates)
-    
-    ind_tourney.dat <- ind_years_formatted %>% 
-      filter(Year>=ind_tourney_min,
-             Year<=ind_tourney_max,
-             Placement %in% input$placement_filter,
-             Seed %in% input$seed_filter) %>% 
-      filter(Team %in% input$team_filter) %>% 
-      arrange(desc(`Team Points`)) 
-    
-    
-  })
-  
 
-  
+    ind_tourney.dat <- ind_years_formatted %>%
+      filter(
+        Year >= ind_tourney_min,
+        Year <= ind_tourney_max,
+        Placement %in% input$placement_filter,
+        Seed %in% input$seed_filter
+      ) %>%
+      filter(Team %in% input$team_filter) %>%
+      arrange(desc(`Team Points`))
+  })
+
+
+
   # render a data table based on filters
-  
+
   output$ind_tourneys_table <- renderDT({
-    
-    dat <- ind_tourneys_reactive() %>% 
-      select(Name,Team,Weight,Seed,Year,Placement,`Team Points`,`Bonus Percent`)
-    
+    dat <- ind_tourneys_reactive() %>%
+      select(Name, Team, Weight, Seed, Year, Placement, `Team Points`, `Bonus Percent`)
+
     datatable(
       dat,
-      selection="single",
-      options=list(pageLength=25))
-    
+      selection = "single",
+      options = list(pageLength = 25)
+    )
   })
-  
+
   # filter individual matches based on a selected individual
   # from the individual tourneys table, first create
   # a reactive object of the selected row (right now
   # only allowing a single selection)
-  
-  tourneys_reactive <- reactive({
-    
-    tourney_dat <- ind_tourneys_reactive()
-    selected_tourneys <- input$ind_tourneys_table_rows_selected 
-    
-    dat <-   tourney_dat[selected_tourneys,]
 
-    
+  tourneys_reactive <- reactive({
+    tourney_dat <- ind_tourneys_reactive()
+    selected_tourneys <- input$ind_tourneys_table_rows_selected
+
+    dat <- tourney_dat[selected_tourneys, ]
   })
-  
+
   # now filter the data reactively
-  
+
   matches_reactive <- reactive({
-    
     req(tourneys_reactive())
-    
+
     dat <- tourneys_reactive()
 
     output <- matches_master %>%
-      filter(winner_wrestler_id %in% dat$wrestler_id|loser_wrestler_id%in% dat$wrestler_id,
-             year %in% dat$Year,
-             weight_class %in% dat$Weight) %>%
+      filter(
+        winner_wrestler_id %in% dat$wrestler_id | loser_wrestler_id %in% dat$wrestler_id,
+        year %in% dat$Year,
+        weight_class %in% dat$Weight
+      ) %>%
       arrange(round)
-
   })
-  
+
   # make the filtered matches for selected individual render
   # to a datatable object
-  
+
   output$ind_matches_table <- renderDT({
-    
     req(tourneys_reactive())
     req(matches_reactive())
-    
-    dat <- matches_reactive() %>% 
-      mutate(Winner=str_c(winner_firstlast,winner_team,sep=" - "),
-             Loser=str_c(loser_firstlast,loser_team,sep=" - "),
-             Score=str_c(winner_match_points,loser_match_points,sep= "-")) %>% 
-      select(Round=round,Weight=weight_class,
-             Winner,Result=result,
-             Loser,Score,
-             `Termination Time`=termination_time,
-             `Team Points Secured`=winner_team_points_secured)
-    
+
+    dat <- matches_reactive() %>%
+      mutate(
+        Winner = str_c(winner_firstlast, winner_team, sep = " - "),
+        Loser = str_c(loser_firstlast, loser_team, sep = " - "),
+        Score = str_c(winner_match_points, loser_match_points, sep = "-")
+      ) %>%
+      select(
+        Round = round, Weight = weight_class,
+        Winner, Result = result,
+        Loser, Score,
+        `Termination Time` = termination_time,
+        `Team Points Secured` = winner_team_points_secured
+      )
+
     datatable(
-      
-     dat
-      
+      dat
     )
-    
   })
 
-  
+
   # make careers by wrestlers filter reactively
-  
+
   careers_reactive <- reactive({
-    
     req(input$career_dates)
-    
+
     teams_selected <- input$career_team_filter
-    team_pattern <-  paste0(
-      "(^|,\\s*)(",                 # start of string or “comma+optional spaces”
-      paste0(teams_selected, collapse="|"),  # Iowa|Oklahoma State
-      ")(?=,|$)"                    # followed by comma or end-of-string
+    team_pattern <- paste0(
+      "(^|,\\s*)(", # start of string or “comma+optional spaces”
+      paste0(teams_selected, collapse = "|"), # Iowa|Oklahoma State
+      ")(?=,|$)" # followed by comma or end-of-string
     )
-       
-    
+
+
     career_min <- min(input$career_dates)
     career_max <- max(input$career_dates)
-    
-    career.dat <- careers_formatted %>% 
-      filter(career_start>=career_min,
-            career_end<=career_max,
-            str_detect(`Team(s)`, regex(team_pattern))
-            ) %>% 
+
+    career.dat <- careers_formatted %>%
+      filter(
+        career_start >= career_min,
+        career_end <= career_max,
+        str_detect(`Team(s)`, regex(team_pattern))
+      ) %>%
       arrange(desc(`Team Points`))
-    
-    
   })
-  
-  
-  
+
+
+
   # render a data table based on filters
-  
+
   output$careers_table <- renderDT({
-    
-    dat <- careers_reactive() %>% 
-      select(-c(wrestler_id,career_start,career_end,
-                Falls,`Total Falls Time`,`Bonus Wins`))
-    
+    dat <- careers_reactive() %>%
+      select(-c(
+        wrestler_id, career_start, career_end,
+        Falls, `Total Falls Time`, `Bonus Wins`
+      ))
+
     datatable(dat,
-              filter="top",
-              selection="single",
-              options=list(pageLength=25))
-    
+      filter = "top",
+      selection = "single",
+      options = list(pageLength = 25)
+    )
   })
-  
+
   # filter individual years based on a selected individual
   # careers from the individual career table, first create
   # a reactive object of the selected row (right now
   # only allowing a single selection)
-  
+
   seasons_reactive <- reactive({
-    
     career_dat <- careers_reactive()
-    selected_careers <- input$careers_table_rows_selected 
-    
-    dat <-   career_dat[selected_careers,]
-    
-    
+    selected_careers <- input$careers_table_rows_selected
+
+    dat <- career_dat[selected_careers, ]
   })
-  
+
   # now filter the season reactively
-  
+
   seasons_careerfilter_reactive <- reactive({
-    
     req(seasons_reactive())
-    
+
     dat <- seasons_reactive()
-    
+
     output <- ind_years_formatted %>%
-      filter(wrestler_id %in% dat$wrestler_id) 
-    
+      filter(wrestler_id %in% dat$wrestler_id)
   })
-  
+
   # make the filtered seasons for selected individual render
   # to a datatable object
-  
+
   output$seasons_careerfilter_table <- renderDT({
-    
     # dat <- careers_reactive()
-    
+
     req(seasons_reactive())
     req(seasons_careerfilter_reactive())
 
     dat <- seasons_careerfilter_reactive() %>%
-      select(Name,Team,Weight,Seed,Year,Placement,`Team Points`,`Bonus Percent`)
+      select(Name, Team, Weight, Seed, Year, Placement, `Team Points`, `Bonus Percent`)
 
     datatable(
       dat,
-      selection="single",
-      options=list(pageLength=25))
-
-
-    
+      selection = "single",
+      options = list(pageLength = 25)
+    )
   })
-  
+
   # filter individual matches based on a selected individual
   # from the career tourneys table, first create
   # a reactive object of the selected row (right now
   # only allowing a single selection)
-  
-  career_matches_reactive <- reactive({
-    
-    req(seasons_reactive())
-    
-    dat <- seasons_reactive()
-    
-    output <- matches_master %>%
-      filter(winner_wrestler_id %in% dat$wrestler_id|loser_wrestler_id%in% dat$wrestler_id) %>%
-      arrange(year,round)
-    
-  })  
 
-  
+  career_matches_reactive <- reactive({
+    req(seasons_reactive())
+
+    dat <- seasons_reactive()
+
+    output <- matches_master %>%
+      filter(winner_wrestler_id %in% dat$wrestler_id | loser_wrestler_id %in% dat$wrestler_id) %>%
+      arrange(year, round)
+  })
+
+
   # make the filtered matches for selected careers render
   # to a datatable object
-  
+
   output$career_matches_table <- renderDT({
-    
     req(seasons_reactive())
-    
-    dat <- career_matches_reactive() %>% 
-      mutate(Winner=str_c(winner_firstlast,winner_team,sep=" - "),
-             Loser=str_c(loser_firstlast,loser_team,sep=" - "),
-             Score=str_c(winner_match_points,loser_match_points,sep= "-")) %>% 
-      select(Year=year,Round=round,Weight=weight_class,
-             Winner,Result=result,
-             Loser,Score,
-             `Termination Time`=termination_time,
-             `Team Points Secured`=winner_team_points_secured)
-    
+
+    dat <- career_matches_reactive() %>%
+      mutate(
+        Winner = str_c(winner_firstlast, winner_team, sep = " - "),
+        Loser = str_c(loser_firstlast, loser_team, sep = " - "),
+        Score = str_c(winner_match_points, loser_match_points, sep = "-")
+      ) %>%
+      select(
+        Year = year, Round = round, Weight = weight_class,
+        Winner, Result = result,
+        Loser, Score,
+        `Termination Time` = termination_time,
+        `Team Points Secured` = winner_team_points_secured
+      )
+
     datatable(
-      
+
       dat,
-      options=list(pageLength=25)
-      
+      options = list(pageLength = 25)
     )
-    
   })
-  
+
   # make a reactive team score object
-  
+
   teamscores_reactive <- reactive({
-    
-    team_results_annual %>% 
-      filter(year>=min(input$teamrace_years),
-             year<=max(input$teamrace_years),
-             team %in% input$teamrace_team_filter) %>% 
+    team_results_annual %>%
+      filter(
+        year >= min(input$teamrace_years),
+        year <= max(input$teamrace_years),
+        team %in% input$teamrace_team_filter
+      ) %>%
       arrange(-score)
-    
   })
-  
+
   # make the filtered team score table
   # render as a Data Table
-  
+
   output$teamscores_table <- renderDT({
-    
-    dat <- teamscores_reactive() %>% 
-      rename(Team=team,Year=year,Score=score,
-             Qualifiers=qualifiers,Champs=champs,
-             Finalists=finalists,AA=aa,
-             `Bonus Points`=bonus_points)
-    
+    dat <- teamscores_reactive() %>%
+      rename(
+        Team = team, Year = year, Score = score,
+        Qualifiers = qualifiers, Champs = champs,
+        Finalists = finalists, AA = aa,
+        `Bonus Points` = bonus_points
+      )
+
     datatable(
-      
+
       dat,
-      selection=list(mode="single"),
-      options=list(pageLength=25)
-      
+      selection = list(mode = "single"),
+      options = list(pageLength = 25)
     )
-    
   })
-  
+
   # filter individual years based on a selected team
   # careers from the individual career table, first create
   # a reactive object of the selected row (right now
   # only allowing a single selection)
-  
+
   teamseasons_reactive <- reactive({
-    
     teamscores_dat <- teamscores_reactive()
-    selected_seasons <- input$teamscores_table_rows_selected 
-    
-    dat <-   teamscores_dat[selected_seasons,]
-    
-    
+    selected_seasons <- input$teamscores_table_rows_selected
+
+    dat <- teamscores_dat[selected_seasons, ]
   })
-  
+
   # now filter the individual seasons reactively
-  
+
   teamseasons_careerfilter_reactive <- reactive({
-    
     req(teamseasons_reactive())
-    
+
     dat <- teamseasons_reactive()
-    
+
     output <- ind_years_formatted %>%
-      filter(team %in% dat$team,
-             year %in% dat$year) 
-    
+      filter(
+        team %in% dat$team,
+        year %in% dat$year
+      )
   })
-  
+
   # make the filtered team seasons for selected individual render
   # to a datatable object
-  
+
   output$teamseasons_careerfilter_table <- renderDT({
-    
     # dat <- careers_reactive()
-    
+
     req(teamseasons_reactive())
     req(teamseasons_careerfilter_reactive())
-    
+
     dat <- teamseasons_careerfilter_reactive() %>%
-      select(Name,Team,Weight,Seed,Year,Placement,`Team Points`,`Bonus Percent`) %>% 
+      select(Name, Team, Weight, Seed, Year, Placement, `Team Points`, `Bonus Percent`) %>%
       arrange(Weight)
-    
+
     datatable(
       dat,
-      selection="single",
-      options=list(pageLength=25))
-    
-    
-    
+      selection = "single",
+      options = list(pageLength = 25)
+    )
   })
-  
+
   # filter matches reactively from the selected team/year combo
-  
+
   team_seasons_matchfilter_reactive <- reactive({
-    
     req(teamseasons_reactive())
-    
+
     dat <- teamseasons_reactive()
-    
-    output <- matches_master %>% 
-      filter(winner_team %in% dat$team|loser_team %in% dat$team,
-             year %in% dat$year)
-    
+
+    output <- matches_master %>%
+      filter(
+        winner_team %in% dat$team | loser_team %in% dat$team,
+        year %in% dat$year
+      )
   })
-  
+
   # render a data table of all the individual matches for the
   # team/year selection
-  
+
   output$teammatches_filter_table <- renderDT({
-    
     req(teamseasons_reactive())
-    
-    dat <- team_seasons_matchfilter_reactive() %>% 
-      mutate(Winner=str_c(winner_firstlast,winner_team,sep=" - "),
-             Loser=str_c(loser_firstlast,loser_team,sep=" - "),
-             Score=str_c(winner_match_points,loser_match_points,sep= "-")) %>% 
-      select(Year=year,Round=round,Weight=weight_class,
-             Winner,Result=result,
-             Loser,Score,
-             `Termination Time`=termination_time,
-             `Team Points Secured`=winner_team_points_secured)
-    
+
+    dat <- team_seasons_matchfilter_reactive() %>%
+      mutate(
+        Winner = str_c(winner_firstlast, winner_team, sep = " - "),
+        Loser = str_c(loser_firstlast, loser_team, sep = " - "),
+        Score = str_c(winner_match_points, loser_match_points, sep = "-")
+      ) %>%
+      select(
+        Year = year, Round = round, Weight = weight_class,
+        Winner, Result = result,
+        Loser, Score,
+        `Termination Time` = termination_time,
+        `Team Points Secured` = winner_team_points_secured
+      )
+
     datatable(
-      
+
       dat,
-      options=list(pageLength=25)
-      
+      options = list(pageLength = 25)
     )
-    
-    
   })
-  
 }
 
-shinyApp(ui,server)
-
-
+shinyApp(ui, server)
