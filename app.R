@@ -1,7 +1,11 @@
-### Data are compiled, start building pieces and parts of shiny app
+### NCAA Wrestling Tournament History -- Shiny app
+###
+### Data prep lives elsewhere:
+###   data-raw/01_pull_sheets.R     pulls the Google Sheets -> data/*.rds
+###   data-raw/02_prep_app_data.R   builds the derived tables -> data/app_tables.rds
+### This file is UI + server only. Run data-raw/02_prep_app_data.R if data/ is stale.
 
 library(tidyverse)
-library(googlesheets4)
 library(bslib)
 library(shiny)
 library(shinyWidgets)
@@ -10,10 +14,8 @@ library(DT)
 library(conflicted)
 library(bsicons)
 library(fontawesome)
-library(arrow)
 library(hms)
 library(forcats)
-
 
 conflicts_prefer(
   DT::renderDT,
@@ -22,385 +24,13 @@ conflicts_prefer(
   plotly::layout
 )
 
-
-
-# need to correct seeds because of team mismatch
-# in original join
-
-seeds_correct <- read_sheet("https://docs.google.com/spreadsheets/d/1Ot6SxKRJS4OHhIvXXp0pXFKAxs7p5_QDRXfIlLJfwh4/edit?gid=1291266525#gid=1291266525") |>
-  filter(!(wrestler == "Lee Roy Smith (Oklahoma State)" & is.na(seed)))
-
-saveRDS(seeds_correct, "data-raw/seeds")
-
-# right now reading in from google sheets
-# because cleaning up a couple things still; will
-# move these to feather to improve speed later
-
-matches_master <- read_sheet("https://docs.google.com/spreadsheets/d/1yDlDRlShRcc_aWd_SmDuJ-5naNwhjIQHPVN4UVcpM24/edit?gid=1555277773#gid=1555277773") %>%
-  mutate(
-    winner_firstlast = str_remove(winner, " \\(.*\\)$"),
-    loser_firstlast = str_remove(loser, " \\(.*\\)$"),
-    round = factor(round, levels = c(
-      "Prelim", "Champ. Round 1", "Champ. Round 2",
-      "Consolation Prelim",
-      "Cons. Round 1", "Quarterfinal", "Cons. Round 2", "Cons. Round 3",
-      "Semifinal", "Cons. Round 4", "Cons. Round 5",
-      "Cons. Semi", "7th Place Match",
-      "5th Place Match", "3rd Place Match", "1st Place Match",
-      "Cons. 2nd Quarterfinal", "Cons. 2nd Semifinal",
-      "2nd Place Match", "Cons. 3rd Quarterfinal",
-      "Cons. 3rd Semifinal", "Round 1", "Round 2",
-      "Round 3", "Round 4", "Round 5", "Round 6",
-      "Round 7"
-    ))
-  )
-
-saveRDS(matches_master, "data-raw/matches")
-
-
-finals_pins <- matches_master %>%
-  filter(
-    round == "1st Place Match",
-    result == "Fall"
-  )
-
-
-wrestlers_master <- read_sheet("https://docs.google.com/spreadsheets/d/11TR6yUScjdF4OJYoqiVV4PqruJg2-KXmCCBljk9ABSw/edit?gid=325863048#gid=325863048") %>%
-  select(-c(seed)) %>%
-  left_join(seeds_correct, by = c(
-    "wrestler", "weight_class",
-    "year", "team"
-  ))
-
-saveRDS(wrestlers_master, "data-raw/wrestlers")
-
-search <- matches_master %>%
-  filter(
-    round == "Prelim",
-    year == 2012
-  )
-
-
-team_tally <- wrestlers_master %>%
-  group_by(team) %>%
-  tally()
-
-
-# find wrestlers who won on their first appearance
-
-first_champs <- wrestlers_master %>%
-  arrange(wrestler_id, year) %>%
-  group_by(wrestler_id) %>%
-  filter(year == min(year) & placement == "First")
-
-first_champs_summarize <- wrestlers_master %>%
-  inner_join(first_champs, by = "wrestler_id") %>%
-  group_by(wrestler_id) %>%
-  summarize(
-    finishes = paste(placement.x, collapse = ", "),
-    appearances = n()
-  ) %>%
-  filter(appearances > 3) %>%
-  mutate(
-    years = word(wrestler_id, 2, sep = "_"),
-    start_year = as.numeric(word(years, 1, sep = "-"))
-  )
-
-# get the amount of points already earned
-# by each wrestler at the start of each season
-
-wrestlers_master2 <- wrestlers_master %>%
-  arrange(wrestler_id, year) %>%
-  group_by(wrestler_id) %>%
-  mutate(
-    cumulative_prior_points = lag(cumsum(team_points), default = 0),
-    cumulative_prior_aa = lag(cumsum(!is.na(placement)), default = NA),
-    cumulative_prior_titles = lag(cumsum(placement == "First"), default = 0),
-    cumulative_prior_finalists = lag(cumsum(placement %in% c("First", "Second")), default = 0)
-  ) %>%
-  mutate(
-    cumulative_prior_aa = ifelse(is.na(cumulative_prior_aa), 0,
-      cumulative_prior_aa
-    ),
-    cumulative_prior_titles = ifelse(is.na(cumulative_prior_titles), 0,
-      cumulative_prior_titles
-    ),
-    cumulative_prior_finalists = ifelse(is.na(cumulative_prior_finalists), 0,
-      cumulative_prior_finalists
-    ),
-    prior_aa_logical = ifelse(cumulative_prior_aa > 0, 1, 0),
-    prior_champ_logical = ifelse(cumulative_prior_titles > 0, 1, 0),
-    prior_finalists_logical = ifelse(cumulative_prior_finalists > 0, 1, 0)
-  ) %>%
-  ungroup()
-
-
-# calculate total returning points by
-# weight class/year
-
-weight_rankings <- wrestlers_master2 %>%
-  group_by(year, weight_class) %>%
-  summarize(
-    earned_points = sum(cumulative_prior_points),
-    aa_finishes = sum(cumulative_prior_aa, na.rm = T),
-    individual_aa = sum(prior_aa_logical),
-    champ_finishes = sum(cumulative_prior_titles, na.rm = T),
-    individual_champs = sum(prior_champ_logical),
-    finalist_finishes = sum(cumulative_prior_finalists, na.rm = T),
-    individual_finalists = sum(prior_finalists_logical)
-  )
-
-weight_search <- wrestlers_master2 %>%
-  filter(
-    weight_class == 133,
-    year >= 2001
-  ) %>%
-  select(
-    weight_class, year, wrestler, team, team_points, placement,
-    cumulative_prior_points, cumulative_prior_aa,
-    prior_aa_logical, prior_champ_logical, cumulative_prior_titles,
-    cumulative_prior_finalists, prior_aa_logical
-  ) %>%
-  group_by(weight_class, year) %>%
-  summarize(
-    prior_champs = sum(prior_champ_logical, na.rm = T),
-    prior_titles = sum(cumulative_prior_titles),
-    prior_aa = sum(prior_aa_logical),
-    prior_aa_awards = sum(cumulative_prior_aa, na.rm = T)
-  )
-
-
-weight_search2 <- wrestlers_master2 %>%
-  filter(
-    weight_class == 133,
-    year == 2021
-  )
-
-
-# start building individual page
-
-ind_years_formatted <- wrestlers_master %>%
-  mutate(
-    display_name = word(wrestler_id, 1, sep = "_", ),
-    Record = str_c(wins, losses, sep = "-"),
-    Matches = wins + losses,
-    `Bonus Percent` = round(bonus / Matches * 100)
-  ) %>%
-  mutate(
-    Name = display_name, Team = team, Weight = weight_class,
-    Seed = seed,
-    Year = year,
-    Placement = placement, `Team Points` = team_points,
-    `Bonus Points` = bonus_points, Record,
-    Terminations = terminations, Pins = falls,
-    Bonus = bonus,
-    `Bonus Percent`, Matches, Wins = wins
-  ) %>%
-  mutate(
-    Placement = ifelse(is.na(Placement), "DNP", Placement),
-    Placement = factor(Placement,
-      levels = c(
-        "First", "Second", "Third", "Fourth",
-        "Fifth", "Sixth", "Seventh", "Eighth",
-        "DNP"
-      )
-    ),
-    Seed = as.factor(seed),
-    Seed = fct_na_value_to_level(Seed, "Unseeded")
-  )
-
-
-
-careers_summary1 <- wrestlers_master %>%
-  mutate(
-    falls_time = na_if(falls_time, "NA"),
-    falls_time = as_hms(falls_time),
-    tech_time = na_if(tech_time, "NA"),
-    tech_time = as_hms(tech_time)
-  ) %>%
-  group_by(wrestler_id) %>%
-  summarize(
-    teams_n = n_distinct(team),
-    teams = toString(unique(team)),
-    weights = toString(unique(weight_class)),
-    appearances = n(),
-    wins = sum(wins),
-    losses = sum(losses),
-    matches = sum(wins, losses),
-    team_points = sum(team_points),
-    titles = sum(placement == "First", na.rm = T),
-    finals = sum(placement %in% c("First", "Second")),
-    aa = sum(!is.na(placement)),
-    falls = sum(falls, na.rm = T),
-    fall_time = as_hms(sum(falls_time, na.rm = T)),
-    terminations = sum(terminations, na.rm = T),
-    bonus = sum(bonus, na.rm = T),
-    termination_percent = round(terminations / matches * 100),
-    bonus_percent = round(bonus / matches * 100),
-    finishes = paste(placement, collapse = ", ")
-  ) %>%
-  mutate(points_per_tourney = round(team_points / appearances, 2)) %>%
-  arrange(-team_points)
-
-# five correction
-
-fivers <- careers_summary1 %>%
-  filter(appearances > 4)
-
-fivers_career_summary <- wrestlers_master %>%
-  filter(wrestler_id %in% fivers$wrestler_id) %>%
-  mutate(
-    falls_time = na_if(falls_time, "NA"),
-    falls_time = as_hms(falls_time),
-    tech_time = na_if(tech_time, "NA"),
-    tech_time = as_hms(tech_time)
-  ) %>%
-  group_by(wrestler_id) %>%
-  arrange(wrestler_id, -team_points) %>%
-  mutate(season_rank = row_number()) %>%
-  filter(season_rank < 5) %>%
-  group_by(wrestler_id) %>%
-  summarize(
-    teams_n = n_distinct(team),
-    teams = toString(unique(team)),
-    weights = toString(unique(weight_class)),
-    appearances = n(),
-    wins = sum(wins),
-    losses = sum(losses),
-    matches = sum(wins, losses),
-    team_points = sum(team_points),
-    titles = sum(placement == "First", na.rm = T),
-    finals = sum(placement %in% c("First", "Second")),
-    aa = sum(!is.na(placement)),
-    falls = sum(falls, na.rm = T),
-    fall_time = as_hms(sum(falls_time, na.rm = T)),
-    terminations = sum(terminations, na.rm = T),
-    bonus = sum(bonus, na.rm = T),
-    termination_percent = round(terminations / matches * 100),
-    bonus_percent = round(bonus / matches * 100),
-    finishes = paste(placement, collapse = ", ")
-  ) %>%
-  mutate(points_per_tourney = round(team_points / appearances, 2)) %>%
-  arrange(-team_points)
-
-careers_summary2 <- careers_summary1 %>%
-  filter(appearances < 5) %>%
-  bind_rows(fivers_career_summary) %>%
-  mutate(
-    career_range = word(wrestler_id, 2, sep = "_"),
-    career_start = as.numeric(word(career_range, 1, sep = "-")),
-    career_end = as.numeric(word(career_range, 2, sep = "-"))
-  )
-
-search <- wrestlers_master %>%
-  anti_join(careers_summary2, by = "wrestler_id")
-
-careers_formatted <- careers_summary2 %>%
-  mutate(Wrestler = word(wrestler_id, 1, sep = "_")) %>%
-  select(wrestler_id, career_start, career_end,
-    Wrestler,
-    `Years Active` = career_range,
-    `Team(s)` = teams,
-    `Weight(s)` = weights,
-    Appearances = appearances,
-    Placements = finishes,
-    `Team Points` = team_points, Titles = titles,
-    `Team Points per Appearance` = points_per_tourney,
-    `Finals Appearances` = finals,
-    `AA Finishes` = aa, Wins = wins, Losses = losses,
-    Falls = falls, `Total Falls Time` = fall_time,
-    `Bonus Wins` = bonus, `Bonus Percent` = bonus_percent
-  )
-
-
-# for ranking brackets join in career accomplishments
-# in addition to what they had already earned
-
-career_relevant <- careers_summary2 %>%
-  select(wrestler_id,
-    career_team_points = team_points, career_titles = titles,
-    career_finals = finals, career_aa = aa
-  ) %>%
-  mutate(
-    career_aa_logical = ifelse(career_aa > 0, 1, 0),
-    career_champ_logical = ifelse(career_titles > 0, 1, 0)
-  )
-
-wrestlers_master3 <- wrestlers_master2 %>%
-  left_join(career_relevant, by = "wrestler_id")
-
-
-weight_rankings <- wrestlers_master3 %>%
-  group_by(year, weight_class) %>%
-  summarize(
-    earned_points = sum(cumulative_prior_points),
-    career_points = sum(career_team_points),
-    aa_finishes = sum(cumulative_prior_aa, na.rm = T),
-    career_aa_finishes = sum(career_aa, na.rm = T),
-    individual_aa = sum(prior_aa_logical),
-    individiaul_aa_career = sum(career_aa_logical),
-    champ_finishes = sum(cumulative_prior_titles, na.rm = T),
-    career_champ_finishes = sum(career_titles, na.rm = T),
-    individual_champs = sum(prior_champ_logical),
-    individual_champs_career = sum(career_champ_logical),
-    finalist_finishes = sum(cumulative_prior_finalists, na.rm = T),
-    individual_finalists = sum(prior_finalists_logical)
-  )
-
-weight_search <- wrestlers_master3 %>%
-  filter(
-    weight_class == 174,
-    year == 2022
-  ) %>%
-  select(
-    weight_class, year, wrestler, team, team_points, placement,
-    cumulative_prior_points, cumulative_prior_aa,
-    prior_aa_logical, prior_champ_logical, cumulative_prior_titles,
-    cumulative_prior_finalists, prior_aa_logical, career_team_points,
-    career_aa, career_titles
-  )
-
-# career filters? Team, Number of Titles, Number of AA
-
-# make some formatting changes for individual tournaments
-
-# think about adding a plot showing the distribution of team points among the
-# selection
-
-ind_years_hist <- ind_years_formatted %>%
-  filter(Year > 1980, Seed == 2) %>%
-  ggplot(aes(x = `Team Points`)) +
-  geom_histogram() +
-  facet_wrap(~Seed,
-    scales = "free_y"
-  ) +
-  coord_flip() +
-  theme_bw()
-
-ind_years_hist
-
-# make a vector of team
-# choices arranged alphabetically
-
-team_choices <- ind_years_formatted %>%
-  distinct(Team) %>%
-  arrange(Team) %>%
-  pull(Team)
-
-
-team_results_annual <- wrestlers_master %>%
-  group_by(team, year) %>%
-  summarize(
-    score = sum(team_points, na.rm = T),
-    qualifiers = n(),
-    champs = sum(placement == "First", na.rm = T),
-    finalists = sum(placement %in% c("First", "Second"), na.rm = T),
-    aa = sum(!is.na(placement)),
-    bonus_points = sum(bonus_points, na.rm = T)
-  )
-
-iowa <- team_results_annual %>%
-  filter(team == "Iowa")
+# Load the prepared tables into the global environment:
+#   wrestlers_master, matches_master, ind_years_formatted, careers_summary,
+#   careers_formatted, team_choices, team_results_annual
+if (!file.exists("data/app_tables.rds")) {
+  stop("data/app_tables.rds not found -- run: Rscript data-raw/02_prep_app_data.R")
+}
+list2env(readRDS("data/app_tables.rds"), envir = environment())
 
 # build user interface
 
@@ -467,7 +97,7 @@ ui <- page_navbar(
             label = "Choose a range of years",
             min = min(wrestlers_master$year),
             max = max(wrestlers_master$year),
-            value = c(1980, max(careers_summary2$career_end)),
+            value = c(1980, max(careers_summary$career_end)),
             sep = ""
           ),
           pickerInput(
