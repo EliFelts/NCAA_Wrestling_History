@@ -33,6 +33,7 @@ match_browser_ui <- function(id, data) {
         min = min(m$year), max = max(m$year),
         value = c(1980, max(m$year)), sep = ""
       ),
+      jump_year_input(ns("jump_year"), min(m$year), max(m$year)),
       pickerInput(
         ns("rounds"), "Round",
         choices = round_choices, selected = round_choices,
@@ -80,6 +81,9 @@ match_browser_server <- function(id, data) {
     round_choices <- levels(m_all$round)[levels(m_all$round) %in% unique(m_all$round)]
     weight_choices <- sort(unique(m_all$weight_class))
     result_choices <- sort(unique(stats::na.omit(m_all$result)))
+
+    wire_jump_year(input, session, "years", "jump_year",
+                   min(m_all$year), max(m_all$year))
 
     filtered <- reactive({
       req(input$years)

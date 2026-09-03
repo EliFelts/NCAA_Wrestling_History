@@ -22,6 +22,10 @@ team_season_ui <- function(id, data) {
         value = c(1980, max(data$team_results_annual$year)),
         sep = ""
       ),
+      jump_year_input(
+        ns("jump_year"),
+        min(data$team_results_annual$year), max(data$team_results_annual$year)
+      ),
       pickerInput(
         ns("team_filter"), "Filter by Team",
         choices = data$team_choices, selected = data$team_choices,
@@ -55,6 +59,11 @@ team_season_ui <- function(id, data) {
 
 team_season_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
+    wire_jump_year(
+      input, session, "years", "jump_year",
+      min(data$team_results_annual$year), max(data$team_results_annual$year)
+    )
+
     teamscores_reactive <- reactive({
       req(input$years)
       wp <- isTRUE(input$count_prelims)

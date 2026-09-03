@@ -21,6 +21,10 @@ individual_season_ui <- function(id, data) {
         value = c(1980, max(data$ind_years_formatted$Year)),
         sep = ""
       ),
+      jump_year_input(
+        ns("jump_year"),
+        min(data$ind_years_formatted$Year), max(data$ind_years_formatted$Year)
+      ),
       pickerInput(
         ns("team_filter"), "Filter by Team",
         choices = data$team_choices, selected = data$team_choices,
@@ -58,6 +62,11 @@ individual_season_ui <- function(id, data) {
 
 individual_season_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
+    wire_jump_year(
+      input, session, "dates", "jump_year",
+      min(data$ind_years_formatted$Year), max(data$ind_years_formatted$Year)
+    )
+
     seasons_reactive <- reactive({
       req(input$dates)
 

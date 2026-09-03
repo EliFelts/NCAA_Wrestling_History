@@ -37,6 +37,7 @@ seed_performance_ui <- function(id, data) {
         min = min(iy$Year), max = max(iy$Year),
         value = c(1980, max(iy$Year)), sep = ""
       ),
+      jump_year_input(ns("jump_year"), min(iy$Year), max(iy$Year)),
       pickerInput(
         ns("weights"), "Weight Class",
         choices = weight_choices, selected = weight_choices,
@@ -73,6 +74,11 @@ seed_performance_ui <- function(id, data) {
 seed_performance_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
     weight_choices <- sort(unique(data$ind_years_formatted$weight_class))
+
+    wire_jump_year(
+      input, session, "dates", "jump_year",
+      min(data$ind_years_formatted$Year), max(data$ind_years_formatted$Year)
+    )
 
     windowed <- reactive({
       req(input$dates)

@@ -24,6 +24,10 @@ careers_ui <- function(id, data) {
         value = c(1980, max(data$careers_summary$career_end)),
         sep = ""
       ),
+      jump_year_input(
+        ns("jump_year"),
+        min(data$ind_years_formatted$Year), max(data$careers_summary$career_end)
+      ),
       pickerInput(
         ns("team_filter"), "Filter by Team",
         choices = data$team_choices, selected = data$team_choices,
@@ -57,6 +61,11 @@ careers_ui <- function(id, data) {
 
 careers_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
+    wire_jump_year(
+      input, session, "dates", "jump_year",
+      min(data$ind_years_formatted$Year), max(data$careers_summary$career_end)
+    )
+
     careers_reactive <- reactive({
       req(input$dates)
 

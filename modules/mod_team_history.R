@@ -40,8 +40,7 @@ team_history_ui <- function(id, data) {
       sliderInput(
         ns("years"), "Year range",
         min = yr_rng[1], max = yr_rng[2], value = yr_rng, sep = ""
-      ),
-      numericInput(ns("min_app"), "Minimum appearances", value = 1, min = 1, step = 1)
+      )
     ),
     layout_columns(
       col_widths = c(12, 6, 6, 12),
@@ -75,8 +74,6 @@ team_history_server <- function(id, data) {
     ledger <- reactive({
       req(input$years)
       y0 <- min(input$years); y1 <- max(input$years)
-      min_app <- input$min_app
-      if (is.null(min_app) || is.na(min_app)) min_app <- 1
 
       team_fin <- data$team_results_annual %>%
         filter(year >= y0, year <= y1) %>%
@@ -110,7 +107,6 @@ team_history_server <- function(id, data) {
           c(`Ind. Titles`, `Distinct Champs`, Finals, `AA Finishes`, `Distinct AAs`),
           ~ tidyr::replace_na(.x, 0L)
         )) %>%
-        filter(Appearances >= min_app) %>%
         transmute(
           Team = team, Appearances,
           Titles, `Runner-Up`, `Top 4`, `Top 10`,

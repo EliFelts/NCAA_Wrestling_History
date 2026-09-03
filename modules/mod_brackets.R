@@ -33,6 +33,10 @@ brackets_ui <- function(id, data) {
         value = c(1996, max(data$bracket_summary_best4$year)),
         sep = ""
       ),
+      jump_year_input(
+        ns("jump_year"),
+        min(data$bracket_summary_best4$year), max(data$bracket_summary_best4$year)
+      ),
       pickerInput(
         ns("weights"), "Filter by Weight Class",
         choices = weights, selected = weights,
@@ -91,6 +95,11 @@ brackets_ui <- function(id, data) {
 
 brackets_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
+    wire_jump_year(
+      input, session, "years", "jump_year",
+      min(data$bracket_summary_best4$year), max(data$bracket_summary_best4$year)
+    )
+
     bracket_summary <- reactive({
       req(input$season_cap)
       data[[paste0("bracket_summary_", input$season_cap)]]
