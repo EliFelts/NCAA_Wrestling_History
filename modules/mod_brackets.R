@@ -53,6 +53,10 @@ brackets_ui <- function(id, data) {
         ns("season_cap"), "Career totals count",
         choices = c("Best 4 seasons" = "best4", "All seasons" = "all"),
         selected = "best4"
+      ),
+      checkboxInput(
+        ns("count_prelims"),
+        "Count prelim (pigtail) points in the Pts columns", value = TRUE
       )
     ),
     layout_columns(
@@ -100,13 +104,25 @@ brackets_server <- function(id, data) {
     brackets_reactive <- reactive({
       req(input$years, input$rank_by)
 
-      bracket_summary() %>%
+      dat <- bracket_summary() %>%
         filter(
           year >= min(input$years),
           year <= max(input$years),
           weight_class %in% input$weights
-        ) %>%
-        arrange(desc(.data[[input$rank_by]]))
+        )
+
+      # The "count prelims" toggle just swaps the points columns for their
+      # pigtail-inclusive twins; ranking + display below read the same names.
+      if (isTRUE(input$count_prelims)) {
+        dat <- dat %>%
+          mutate(
+            returning_points = returning_points_wp,
+            returning_points_per_entrant = returning_points_per_entrant_wp,
+            career_points = career_points_wp
+          )
+      }
+
+      dat %>% arrange(desc(.data[[input$rank_by]]))
     })
 
     output$brackets_table <- renderDT({

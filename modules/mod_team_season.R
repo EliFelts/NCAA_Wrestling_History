@@ -27,6 +27,9 @@ team_season_ui <- function(id, data) {
         choices = data$team_choices, selected = data$team_choices,
         multiple = TRUE,
         options = list(`actions-box` = TRUE, `live-search` = TRUE)
+      ),
+      checkboxInput(
+        ns("count_prelims"), "Count prelim (pigtail) points", value = TRUE
       )
     ),
     layout_columns(
@@ -54,6 +57,7 @@ team_season_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
     teamscores_reactive <- reactive({
       req(input$years)
+      wp <- isTRUE(input$count_prelims)
 
       data$team_results_annual %>%
         filter(
@@ -61,13 +65,17 @@ team_season_server <- function(id, data) {
           year <= max(input$years),
           team %in% input$team_filter
         ) %>%
-        arrange(-score)
+        mutate(
+          .score = if (wp) score_wp else score,
+          .place = if (wp) place_wp else place
+        ) %>%
+        arrange(-.score)
     })
 
     output$teamscores_table <- renderDT({
       dat <- teamscores_reactive() %>%
         transmute(
-          Team = team, Year = year, Place = place, Score = score,
+          Team = team, Year = year, Place = .place, Score = .score,
           Qualifiers = qualifiers, Champs = champs,
           Finalists = finalists, AA = aa,
           `Bonus Points` = bonus_points, Era = era

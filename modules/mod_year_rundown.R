@@ -37,6 +37,10 @@ year_rundown_ui <- function(id, data) {
         min = min(yrs), max = max(yrs),
         value = max(yrs), step = 1, sep = "",
         animate = animationOptions(interval = 1200)
+      ),
+      checkboxInput(
+        ns("count_prelims"),
+        "Count prelim (pigtail) points in Recon. Pts", value = TRUE
       )
     ),
     layout_columns(
@@ -117,9 +121,11 @@ year_rundown_server <- function(id, data) {
 
     leaderboard <- reactive({
       req(input$year)
+      recon_col <- if (isTRUE(input$count_prelims)) "score_wp" else "score"
       counts <- data$team_results_annual %>%
         filter(year == input$year) %>%
-        select(team, recon_pts = score, qualifiers, champs, finalists, aa)
+        select(team, recon_pts = all_of(recon_col),
+               qualifiers, champs, finalists, aa)
 
       data$team_scores_official %>%
         filter(year == input$year) %>%

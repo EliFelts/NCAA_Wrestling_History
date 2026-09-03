@@ -44,6 +44,7 @@ for (f in c(
   "modules/mod_seed_performance.R",
   "modules/mod_match_browser.R",
   "modules/mod_year_rundown.R",
+  "modules/mod_team_history.R",
   "modules/mod_methodology.R"
 )) source(f)
 
@@ -53,6 +54,7 @@ ui <- page_navbar(
   nav_panel("Individual Season Data", individual_season_ui("individual", app_data)),
   nav_panel("Individual Career Data", careers_ui("careers", app_data)),
   nav_panel("Team Scores by Season", team_season_ui("team", app_data)),
+  nav_panel("Team History", team_history_ui("team_history", app_data)),
   nav_panel("Weight Class Brackets", brackets_ui("brackets", app_data)),
   nav_panel("Seed Performance", seed_performance_ui("seeds", app_data)),
   nav_panel("Year Rundown", year_rundown_ui("year_rundown", app_data)),
@@ -65,6 +67,7 @@ server <- function(input, output, session) {
   individual_season_server("individual", app_data)
   careers_server("careers", app_data)
   team_season_server("team", app_data)
+  team_history_server("team_history", app_data)
   brackets_server("brackets", app_data)
   seed_performance_server("seeds", app_data)
   year_rundown_server("year_rundown", app_data)

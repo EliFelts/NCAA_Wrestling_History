@@ -29,6 +29,9 @@ careers_ui <- function(id, data) {
         choices = data$team_choices, selected = data$team_choices,
         multiple = TRUE,
         options = list(`actions-box` = TRUE, `live-search` = TRUE)
+      ),
+      checkboxInput(
+        ns("count_prelims"), "Count prelim (pigtail) points", value = TRUE
       )
     ),
     layout_columns(
@@ -64,11 +67,18 @@ careers_server <- function(id, data) {
         ")(?=,|$)"
       )
 
+      wp <- isTRUE(input$count_prelims)
+
       data$careers_formatted %>%
         filter(
           career_start >= min(input$dates),
           career_end <= max(input$dates),
           str_detect(`Team(s)`, regex(team_pattern))
+        ) %>%
+        mutate(
+          `Team Points` = if (wp) team_points_wp else `Team Points`,
+          `Team Points per Appearance` =
+            if (wp) points_per_tourney_wp else `Team Points per Appearance`
         ) %>%
         arrange(desc(`Team Points`))
     })
@@ -77,6 +87,7 @@ careers_server <- function(id, data) {
       dat <- careers_reactive() %>%
         select(-c(
           wrestler_id, career_start, career_end,
+          team_points_wp, points_per_tourney_wp,
           Falls, `Total Falls Time`, `Bonus Wins`
         ))
 
